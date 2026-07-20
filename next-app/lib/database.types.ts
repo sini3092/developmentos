@@ -1212,6 +1212,9 @@ export type Database = {
           codex_model: string | null
           codex_workspace_path: string | null
           session_mode: string
+          discovered_workspaces: string[]
+          discovered_models: string[]
+          catalog_updated_at: string | null
           created_at: string
           updated_at: string
         }
@@ -1221,6 +1224,9 @@ export type Database = {
           codex_model?: string | null
           codex_workspace_path?: string | null
           session_mode?: string
+          discovered_workspaces?: string[]
+          discovered_models?: string[]
+          catalog_updated_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1230,6 +1236,9 @@ export type Database = {
           codex_model?: string | null
           codex_workspace_path?: string | null
           session_mode?: string
+          discovered_workspaces?: string[]
+          discovered_models?: string[]
+          catalog_updated_at?: string | null
           created_at?: string
           updated_at?: string
         }
