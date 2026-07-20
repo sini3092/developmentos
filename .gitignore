@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+build/
+
+# Env (never commit secrets)
+.env
+.env.*
+!.env.local.example
+
+# Debug / OS
+.DS_Store
+*.pem
+npm-debug.log*
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Vercel
+.vercel
+
+# IDE
+.idea/
+.vscode/

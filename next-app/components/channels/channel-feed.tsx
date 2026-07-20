@@ -1,0 +1,162 @@
+"use client"
+
+import { useActionState, useEffect, useMemo, useRef } from "react"
+import { useRouter } from "next/navigation"
+
+import { postChannelMessage } from "@/lib/actions/channels"
+import type { ChannelWithMessageTree } from "@/lib/auth/channels-context"
+import type { ProjectMemberWithProfile } from "@/lib/database.types"
+import { ChannelMessageItem } from "@/components/channels/channel-message-item"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { useDraftComposer } from "@/hooks/use-draft-composer"
+
+type ChannelFeedProps = {
+  channel: ChannelWithMessageTree
+  slug: string
+  workspaceId: string
+  projectId: string
+  members: ProjectMemberWithProfile[]
+  canEdit: boolean
+}
+
+export function ChannelFeed({
+  channel,
+  slug,
+  workspaceId,
+  projectId,
+  members,
+  canEdit,
+}: ChannelFeedProps) {
+  const router = useRouter()
+  const [state, formAction, pending] = useActionState(postChannelMessage, {})
+  const formRef = useRef<HTMLFormElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const memberProfiles = members.map((member) => ({
+    profile: member.profile
+      ? { id: member.profile.id, display_name: member.profile.display_name }
+      : null,
+  }))
+
+  const draftMetadata = useMemo(
+    () => ({
+      channelId: channel.id,
+      slug,
+      channelSlug: channel.slug,
+      channelName: channel.name,
+      workspaceId,
+      memberProfiles: JSON.stringify(memberProfiles),
+    }),
+    [channel.id, channel.name, channel.slug, memberProfiles, slug, workspaceId]
+  )
+
+  const draft = useDraftComposer({
+    kind: "channel_message",
+    contextId: channel.id,
+    metadata: draftMetadata,
+  })
+
+  const { clearDraft } = draft
+
+  useEffect(() => {
+    if (state.success) {
+      formRef.current?.reset()
+      void clearDraft()
+      router.refresh()
+    }
+  }, [state.success, router, clearDraft])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [channel.messages.length])
+
+  return (
+    <div className="flex flex-1 flex-col">
+      <header className="border-b border-border/60 px-6 py-4">
+        <div>
+          <h2 className="text-lg font-semibold">{channel.name}</h2>
+          {channel.description ? (
+            <p className="mt-1 text-sm text-muted-foreground">{channel.description}</p>
+          ) : null}
+        </div>
+      </header>
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex-1 space-y-4 overflow-y-auto p-6">
+          {channel.messages.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border/80 bg-surface-raised/50 p-10 text-center">
+              <h3 className="text-sm font-medium">No messages yet</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Start the conversation in #{channel.name.toLowerCase()}.
+              </p>
+            </div>
+          ) : (
+            channel.messages.map((message) => (
+              <ChannelMessageItem
+                key={message.id}
+                message={message}
+                slug={slug}
+                channelSlug={channel.slug}
+                channelName={channel.name}
+                channelId={channel.id}
+                workspaceId={workspaceId}
+                projectId={projectId}
+                members={members}
+                canEdit={canEdit}
+              />
+            ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {canEdit ? (
+          <div className="border-t border-border/60 p-4">
+            <form
+              ref={formRef}
+              action={formAction}
+              className="space-y-3"
+              onSubmit={(event) => {
+                if (!navigator.onLine) {
+                  event.preventDefault()
+                  void draft.queueOffline()
+                }
+              }}
+            >
+              <input type="hidden" name="channelId" value={channel.id} />
+              <input type="hidden" name="slug" value={slug} />
+              <input type="hidden" name="channelSlug" value={channel.slug} />
+              <input type="hidden" name="channelName" value={channel.name} />
+              <input type="hidden" name="workspaceId" value={workspaceId} />
+              <input type="hidden" name="projectId" value={projectId} />
+              <input type="hidden" name="memberProfiles" value={JSON.stringify(memberProfiles)} />
+              {state.error ? (
+                <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {state.error}
+                </p>
+              ) : null}
+              {draft.queued ? (
+                <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+                  Message saved offline — it will send when you reconnect.
+                </p>
+              ) : null}
+              <Textarea
+                name="body"
+                placeholder={`Message #${channel.name.toLowerCase()} — @souls for AI, @personal for Codex, @Name to mention`}
+                rows={3}
+                required
+                value={draft.value}
+                onChange={(event) => draft.setValue(event.target.value)}
+              />
+              <div className="flex justify-end">
+                <Button type="submit" disabled={pending || !draft.value.trim()}>
+                  {pending ? "Sending…" : "Send message"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
