@@ -52,9 +52,8 @@ export function CodexBridgePanel({ settings }: CodexBridgePanelProps) {
           Personal / Codex (@personal)
         </CardTitle>
         <CardDescription>
-          Kun du kan bruke din Personal-agent. Velg samme workspace og modell som i Codex-appen på
-          PC-en din. Når du skriver @personal i chat, kjører Codex på maskinen din og svarer tilbake
-          her.
+          Kun du kan bruke din Personal-agent. @personal kjører Codex i bakgrunnen på PC-en din
+          (samme innlogging og workspace som Codex-appen) og svarer i project chat.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-2">
@@ -149,6 +148,43 @@ export function CodexBridgePanel({ settings }: CodexBridgePanelProps) {
         </form>
 
         <div className="space-y-4">
+          <div className="rounded-lg border border-info/30 bg-info/5 p-4 text-sm">
+            <p className="font-medium">Viktig: Codex-appen ≠ @personal</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+              <li>
+                Codex <strong>desktop-appen</strong> (vinduet du har åpent) er GUI — den starter ikke
+                automatisk fra @personal.
+              </li>
+              <li>
+                @personal trenger <strong>Codex CLI</strong> (kommandolinje) + bridge-scriptet som
+                kjører i bakgrunnen.
+              </li>
+              <li>
+                CLI bruker samme <code className="rounded bg-muted px-1">~/.codex</code>-config som
+                appen (workspace, modell). Ingen nytt vindu åpnes.
+              </li>
+              <li>
+                Hvis <code className="rounded bg-muted px-1">where codex</code> er tom, installer CLI
+                én gang (se under).
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium">0. Installer Codex CLI (én gang)</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Kjør i PowerShell som administrator hvis nødvendig:
+            </p>
+            <pre className="mt-2 overflow-x-auto rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+              {`npm install -g @openai/codex
+# eller:
+powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"`}
+            </pre>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Test: <code className="rounded bg-muted px-1">codex --version</code>
+            </p>
+          </div>
+
           <div>
             <p className="text-sm font-medium">1. Bridge på PC-en</p>
             <p className="mt-1 text-xs text-muted-foreground">

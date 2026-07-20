@@ -76,6 +76,25 @@ function resolveCodexCommand(cliOverride, settingsCommand) {
     }
   }
 
+  try {
+    const npmPrefix = execSync("npm prefix -g", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
+    const npmCandidates = [
+      join(npmPrefix, "codex.cmd"),
+      join(npmPrefix, "codex"),
+      join(npmPrefix, "codex.exe"),
+    ]
+    for (const candidate of npmCandidates) {
+      if (existsSync(candidate)) {
+        return candidate
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   return cliOverride || "codex"
 }
 
@@ -266,6 +285,15 @@ async function processJob(options, job, settings) {
 
   try {
     const codexCmd = resolveCodexCommand(options.cmd, settings?.codex_command)
+    if (codexCmd === "codex" && process.platform === "win32") {
+      try {
+        execSync("where.exe codex", { stdio: "ignore" })
+      } catch {
+        throw new Error(
+          "Codex CLI not found on PATH. Run: npm install -g @openai/codex — the desktop app alone does not power @personal."
+        )
+      }
+    }
     const result = await runCodex(
       codexCmd,
       cwd,
@@ -289,7 +317,12 @@ async function processJob(options, job, settings) {
     })
     console.log(`[bridge] Completed job ${job.id.slice(0, 8)}`)
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Codex failed."
+    let message = error instanceof Error ? error.message : "Codex failed."
+    if (/not recognized|ENOENT/i.test(message)) {
+      message =
+        "Codex CLI not found. Install with: npm install -g @openai/codex — then restart the bridge. " +
+        "The Codex desktop app alone is not enough for @personal."
+    }
     await patchJob(options.url, options.token, job.id, {
       status: "failed",
       error: message,
