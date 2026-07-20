@@ -6,9 +6,14 @@ import { isPublicSignUpEnabled } from "@/lib/auth/registration-policy"
 const AUTH_ROUTES = ["/auth/sign-in", "/auth/sign-up", "/auth/forgot-password"]
 const PUBLIC_PREFIXES = ["/auth", "/invite"]
 const ONBOARDING_PREFIXES = ["/onboarding"]
+const PUBLIC_API_PREFIXES = ["/api/webhooks", "/api/push/deliver", "/api/bridge"]
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+}
+
+function isPublicApiPath(pathname: string) {
+  return PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))
 }
 
 function isAuthRoute(pathname: string) {
@@ -62,7 +67,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(signInUrl)
   }
 
-  if (!isAuthenticated && !isPublicPath(pathname) && !isOnboardingPath(pathname)) {
+  if (
+    !isAuthenticated &&
+    !isPublicPath(pathname) &&
+    !isOnboardingPath(pathname) &&
+    !isPublicApiPath(pathname)
+  ) {
     const signInUrl = request.nextUrl.clone()
     signInUrl.pathname = "/auth/sign-in"
     signInUrl.searchParams.set("next", pathname)

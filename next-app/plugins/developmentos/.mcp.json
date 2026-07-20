@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "developmentos": {
+      "cwd": "../..",
+      "command": "node",
+      "args": ["./scripts/developmentos-mcp.mjs"]
+    }
+  }
+}

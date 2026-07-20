@@ -55,16 +55,10 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
     return null
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle()
-
-  const { data: memberships } = await supabase
-    .from("workspace_members")
-    .select("workspace_id, role")
-    .eq("user_id", user.id)
+  const [{ data: profile }, { data: memberships }] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+    supabase.from("workspace_members").select("workspace_id, role").eq("user_id", user.id),
+  ])
 
   const workspaceIds = memberships?.map((membership) => membership.workspace_id) ?? []
 

@@ -51,7 +51,7 @@ export async function runSoulsAgent(input: RunSoulsAgentInput) {
           role: "system",
           content:
             "You are Souls, the workspace AI for a small game dev team using DevelopmentOS. " +
-            "Answer in the user's language (Norwegian if they write Norwegian). " +
+            "Always respond in English, regardless of the user's language. " +
             "Be concise and practical. Use the project context below. " +
             "When asked about progress, refer to task identifiers, checklist completion, and roadmap initiatives.",
         },

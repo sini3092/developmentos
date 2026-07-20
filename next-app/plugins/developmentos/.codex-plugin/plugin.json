@@ -1,0 +1,21 @@
+{
+  "name": "developmentos",
+  "version": "1.0.0",
+  "description": "Secure MCP integration for DevelopmentOS projects, planning, tasks, team, knowledge, analytics, and search.",
+  "author": { "name": "DevelopmentOS" },
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "DevelopmentOS",
+    "shortDescription": "Plan and operate game-development projects",
+    "longDescription": "Read and update DevelopmentOS projects, roadmap initiatives, milestones, tasks, delegation, teams, activity, game design wiki, lore, analytics, and search through MCP.",
+    "developerName": "DevelopmentOS",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write", "Search"],
+    "defaultPrompt": [
+      "Summarize the current project status.",
+      "Find blocked tasks and suggest next actions.",
+      "Update the roadmap from our latest decisions."
+    ],
+    "brandColor": "#7C3AED"
+  }
+}

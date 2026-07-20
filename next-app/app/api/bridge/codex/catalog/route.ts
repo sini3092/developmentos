@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 
 import { authenticateBridgeToken } from "@/lib/bridge/auth"
+import type { Database } from "@/lib/database.types"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
+
+type CodexCatalogUpsert = Database["public"]["Tables"]["user_codex_settings"]["Insert"]
 
 export async function POST(request: Request) {
   if (!isAdminClientConfigured()) {
@@ -22,16 +25,14 @@ export async function POST(request: Request) {
   const models = (body.models ?? []).map((item) => item.trim()).filter(Boolean).slice(0, 50)
 
   const supabase = createAdminClient()
-  const { error } = await supabase.from("user_codex_settings").upsert(
-    {
-      user_id: auth.userId,
-      discovered_workspaces: workspaces,
-      discovered_models: models,
-      catalog_updated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" }
-  )
+  const payload: CodexCatalogUpsert = {
+    user_id: auth.userId,
+    discovered_workspaces: workspaces,
+    discovered_models: models,
+    catalog_updated_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+  const { error } = await supabase.from("user_codex_settings").upsert(payload, { onConflict: "user_id" })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
