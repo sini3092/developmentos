@@ -66,8 +66,9 @@ export function GithubWebhookPanel({
                 className="font-mono text-xs"
               />
               <p className="text-xs text-muted-foreground">
-                In GitHub → Repository → Settings → Webhooks, subscribe to{" "}
-                <strong>push</strong> and <strong>pull_request</strong> events using this secret.
+                In GitHub → Repository → Settings → Webhooks, use content type{" "}
+                <strong>application/json</strong>, subscribe to <strong>push</strong> and{" "}
+                <strong>pull_request</strong> events, and paste the secret below.
               </p>
             </div>
           ) : (
