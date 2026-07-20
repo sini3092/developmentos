@@ -12,7 +12,10 @@ import {
 } from "@/lib/actions/channels"
 import type { ChannelMessageNode } from "@/lib/auth/channels-context"
 import type { ProjectMemberWithProfile } from "@/lib/database.types"
-import { QUICK_REACTIONS, renderMessageBody } from "@/lib/utils/mentions"
+import { AgentTypingIndicator } from "@/components/channels/agent-typing-indicator"
+import { MessageBody } from "@/components/channels/message-body"
+import { QUICK_REACTIONS } from "@/lib/utils/mentions"
+import type { AgentName } from "@/lib/utils/mentions"
 import { getInitials } from "@/lib/utils/format"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,6 +34,7 @@ type ChannelMessageItemProps = {
   members: ProjectMemberWithProfile[]
   canEdit: boolean
   isReply?: boolean
+  pendingAgents?: AgentName[]
 }
 
 export function ChannelMessageItem({
@@ -44,6 +48,7 @@ export function ChannelMessageItem({
   members,
   canEdit,
   isReply = false,
+  pendingAgents = [],
 }: ChannelMessageItemProps) {
   const router = useRouter()
   const [showReplyForm, setShowReplyForm] = useState(false)
@@ -132,17 +137,15 @@ export function ChannelMessageItem({
           </time>
         </div>
 
-        <p className="text-sm whitespace-pre-wrap">
-          {renderMessageBody(message.body).map((part, index) =>
-            part.type === "mention" ? (
-              <span key={index} className="rounded bg-info/15 px-1 font-medium text-info">
-                {part.value}
-              </span>
-            ) : (
-              <span key={index}>{part.value}</span>
-            )
-          )}
-        </p>
+        <MessageBody body={message.body} agentName={message.agent_name} />
+
+        {pendingAgents.length > 0 ? (
+          <div className="space-y-2">
+            {pendingAgents.map((agent) => (
+              <AgentTypingIndicator key={agent} agent={agent} />
+            ))}
+          </div>
+        ) : null}
 
         {message.linked_task ? (
           <Link

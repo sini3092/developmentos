@@ -5,6 +5,9 @@ export const AGENT_MENTION_ALIASES = {
 
 export type AgentName = keyof typeof AGENT_MENTION_ALIASES
 
+export const MENTION_CHIP_CLASS =
+  "rounded-md bg-blue-500/15 px-1.5 py-0.5 font-semibold text-blue-700 dark:text-blue-300"
+
 const MENTION_PATTERN = /@([A-Za-z0-9][A-Za-z0-9_.-]{0,39})/g
 
 export function parseMentionNames(body: string) {

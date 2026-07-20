@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useRef } from "react"
+import { useActionState, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { postChannelMessage } from "@/lib/actions/channels"
@@ -10,6 +10,9 @@ import { ChannelMessageItem } from "@/components/channels/channel-message-item"
 import { MentionTextarea } from "@/components/channels/mention-textarea"
 import { Button } from "@/components/ui/button"
 import { useDraftComposer } from "@/hooks/use-draft-composer"
+import type { AgentName } from "@/lib/utils/mentions"
+import { parseAgentMentions } from "@/lib/utils/mentions"
+import type { ChannelMessageNode } from "@/lib/auth/channels-context"
 
 type ChannelFeedProps = {
   channel: ChannelWithMessageTree
@@ -18,6 +21,10 @@ type ChannelFeedProps = {
   projectId: string
   members: ProjectMemberWithProfile[]
   canEdit: boolean
+}
+
+function messageHasAgentReplies(message: ChannelMessageNode, agents: AgentName[]) {
+  return agents.every((agent) => message.replies.some((reply) => reply.agent_name === agent))
 }
 
 export function ChannelFeed({
@@ -32,6 +39,8 @@ export function ChannelFeed({
   const [state, formAction, pending] = useActionState(postChannelMessage, {})
   const formRef = useRef<HTMLFormElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const submitBodyRef = useRef<string | null>(null)
+  const [pendingAgents, setPendingAgents] = useState<Record<string, AgentName[]>>({})
 
   const memberProfiles = members.map((member) => ({
     profile: member.profile
@@ -58,28 +67,54 @@ export function ChannelFeed({
   })
 
   const { clearDraft } = draft
+  const hasPendingAgents = Object.keys(pendingAgents).length > 0
 
   useEffect(() => {
-    if (state.success) {
+    if (state.success && state.messageId && submitBodyRef.current) {
+      const agents = parseAgentMentions(submitBodyRef.current)
+      if (agents.length > 0) {
+        setPendingAgents((current) => ({ ...current, [state.messageId!]: agents }))
+      }
+      submitBodyRef.current = null
       formRef.current?.reset()
       void clearDraft()
       router.refresh()
     }
-  }, [state.success, router, clearDraft])
+  }, [state.success, state.messageId, router, clearDraft])
+
+  useEffect(() => {
+    setPendingAgents((current) => {
+      let changed = false
+      const next: Record<string, AgentName[]> = { ...current }
+
+      for (const [messageId, agents] of Object.entries(current)) {
+        const message = channel.messages.find((item) => item.id === messageId)
+        if (message && messageHasAgentReplies(message, agents)) {
+          delete next[messageId]
+          changed = true
+        }
+      }
+
+      return changed ? next : current
+    })
+  }, [channel.messages])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [channel.messages.length])
+  }, [channel.messages.length, hasPendingAgents])
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        router.refresh()
-      }
-    }, 8000)
+    const interval = window.setInterval(
+      () => {
+        if (document.visibilityState === "visible") {
+          router.refresh()
+        }
+      },
+      hasPendingAgents ? 2000 : 8000
+    )
 
     return () => window.clearInterval(interval)
-  }, [router])
+  }, [router, hasPendingAgents])
 
   return (
     <div className="flex flex-1 flex-col">
@@ -114,6 +149,7 @@ export function ChannelFeed({
                 projectId={projectId}
                 members={members}
                 canEdit={canEdit}
+                pendingAgents={pendingAgents[message.id] ?? []}
               />
             ))
           )}
@@ -130,7 +166,9 @@ export function ChannelFeed({
                 if (!navigator.onLine) {
                   event.preventDefault()
                   void draft.queueOffline()
+                  return
                 }
+                submitBodyRef.current = draft.value
               }}
             >
               <input type="hidden" name="channelId" value={channel.id} />

@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react"
 
 import { cn } from "@/lib/utils"
-import { Textarea } from "@/components/ui/textarea"
+import { MENTION_CHIP_CLASS, renderMessageBody } from "@/lib/utils/mentions"
 
 type MentionOption = {
   id: string
@@ -120,42 +120,67 @@ export function MentionTextarea({
 
   return (
     <div className="relative">
-      <Textarea
-        ref={textareaRef}
-        name={name}
-        placeholder={placeholder}
-        rows={rows}
-        required={required}
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value)
-          setCursor(event.target.selectionStart ?? 0)
-        }}
-        onClick={updateCursor}
-        onKeyUp={updateCursor}
-        onKeyDown={(event) => {
-          if (!showMenu) {
-            onKeyDown?.(event)
-            return
-          }
+      <div className="relative overflow-hidden rounded-md border border-input bg-transparent shadow-xs">
+        <div
+          aria-hidden
+          className="pointer-events-none min-h-[calc(var(--rows)*1.5rem+1rem)] whitespace-pre-wrap break-words px-3 py-2 text-sm leading-relaxed"
+          style={{ ["--rows" as string]: rows }}
+        >
+          {value ? (
+            renderMessageBody(value).map((part, index) =>
+              part.type === "mention" ? (
+                <span key={index} className={MENTION_CHIP_CLASS}>
+                  {part.value}
+                </span>
+              ) : (
+                <span key={index}>{part.value}</span>
+              )
+            )
+          ) : (
+            <span className="text-muted-foreground">{placeholder}</span>
+          )}
+        </div>
+        <textarea
+          ref={textareaRef}
+          name={name}
+          rows={rows}
+          required={required}
+          value={value}
+          className={cn(
+            "absolute inset-0 resize-none bg-transparent px-3 py-2 text-sm leading-relaxed text-transparent caret-foreground outline-none",
+            "placeholder:text-transparent"
+          )}
+          placeholder={placeholder}
+          onChange={(event) => {
+            onChange(event.target.value)
+            setCursor(event.target.selectionStart ?? 0)
+          }}
+          onClick={updateCursor}
+          onKeyUp={updateCursor}
+          onKeyDown={(event) => {
+            if (!showMenu) {
+              onKeyDown?.(event)
+              return
+            }
 
-          if (event.key === "ArrowDown") {
-            event.preventDefault()
-            setActiveIndex((index) => (index + 1) % options.length)
-          } else if (event.key === "ArrowUp") {
-            event.preventDefault()
-            setActiveIndex((index) => (index - 1 + options.length) % options.length)
-          } else if (event.key === "Enter" || event.key === "Tab") {
-            event.preventDefault()
-            insertMention(options[activeIndex] ?? options[0]!)
-          } else if (event.key === "Escape") {
-            event.preventDefault()
-            setCursor(0)
-          } else {
-            onKeyDown?.(event)
-          }
-        }}
-      />
+            if (event.key === "ArrowDown") {
+              event.preventDefault()
+              setActiveIndex((index) => (index + 1) % options.length)
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault()
+              setActiveIndex((index) => (index - 1 + options.length) % options.length)
+            } else if (event.key === "Enter" || event.key === "Tab") {
+              event.preventDefault()
+              insertMention(options[activeIndex] ?? options[0]!)
+            } else if (event.key === "Escape") {
+              event.preventDefault()
+              setCursor(0)
+            } else {
+              onKeyDown?.(event)
+            }
+          }}
+        />
+      </div>
 
       {showMenu ? (
         <div className="absolute bottom-full left-0 z-20 mb-2 w-full max-w-sm overflow-hidden rounded-lg border border-border/60 bg-popover shadow-lg">
@@ -165,14 +190,18 @@ export function MentionTextarea({
               type="button"
               className={cn(
                 "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm",
-                index === activeIndex ? "bg-info/10 text-info" : "hover:bg-muted/60"
+                index === activeIndex
+                  ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
+                  : "hover:bg-muted/60"
               )}
               onMouseDown={(event) => {
                 event.preventDefault()
                 insertMention(option)
               }}
             >
-              <span className="font-medium">@{option.insertValue}</span>
+              <span className={cn("font-medium", index === activeIndex && MENTION_CHIP_CLASS)}>
+                @{option.insertValue}
+              </span>
               <span className="text-xs text-muted-foreground">{option.description}</span>
             </button>
           ))}

@@ -13,6 +13,7 @@ export type ChannelActionState = {
   error?: string
   success?: string
   taskId?: string
+  messageId?: string
 }
 
 function revalidateChannelPaths(slug: string, channelSlug?: string) {
@@ -163,7 +164,7 @@ export async function postChannelMessage(
   }
 
   revalidateChannelPaths(slug, channelSlug)
-  return { success: "Message posted." }
+  return { success: "Message posted.", messageId: message.id }
 }
 
 export async function toggleMessageReaction(
