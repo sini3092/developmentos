@@ -112,3 +112,42 @@ export async function createCodexBridgeToken(
     token,
   }
 }
+
+export async function updateCodexSettings(
+  _prevState: IntegrationActionState,
+  formData: FormData
+): Promise<IntegrationActionState> {
+  const codexProfile = String(formData.get("codexProfile") ?? "").trim() || null
+  const codexModel = String(formData.get("codexModel") ?? "").trim() || null
+  const codexWorkspacePath = String(formData.get("codexWorkspacePath") ?? "").trim() || null
+  const sessionMode = String(formData.get("sessionMode") ?? "new")
+  const normalizedSessionMode = sessionMode === "resume_last" ? "resume_last" : "new"
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: "Not authenticated." }
+  }
+
+  const { error } = await supabase.from("user_codex_settings").upsert(
+    {
+      user_id: user.id,
+      codex_profile: codexProfile,
+      codex_model: codexModel,
+      codex_workspace_path: codexWorkspacePath,
+      session_mode: normalizedSessionMode,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" }
+  )
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidatePath("/settings")
+  return { success: "Codex settings saved." }
+}

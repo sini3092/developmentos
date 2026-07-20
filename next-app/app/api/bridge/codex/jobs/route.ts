@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { authenticateBridgeToken } from "@/lib/bridge/auth"
+import { DEFAULT_CODEX_SETTINGS } from "@/lib/codex/types"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
 
 export async function GET(request: Request) {
@@ -14,14 +15,22 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient()
-  const { data: jobs, error } = await supabase
-    .from("agent_jobs")
-    .select("id, prompt, status, project_id, channel_id, trigger_message_id, created_at")
-    .eq("created_by", auth.userId)
-    .eq("agent_name", "personal")
-    .in("status", ["awaiting_approval", "pending"])
-    .order("created_at", { ascending: true })
-    .limit(10)
+
+  const [{ data: jobs, error }, { data: codexSettings }] = await Promise.all([
+    supabase
+      .from("agent_jobs")
+      .select("id, prompt, status, project_id, channel_id, trigger_message_id, created_at")
+      .eq("created_by", auth.userId)
+      .eq("agent_name", "personal")
+      .in("status", ["awaiting_approval", "pending"])
+      .order("created_at", { ascending: true })
+      .limit(10),
+    supabase
+      .from("user_codex_settings")
+      .select("codex_profile, codex_model, codex_workspace_path, session_mode")
+      .eq("user_id", auth.userId)
+      .maybeSingle(),
+  ])
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -42,7 +51,18 @@ export async function GET(request: Request) {
   const projectSlugById = new Map((projects ?? []).map((project) => [project.id, project.slug]))
   const channelSlugById = new Map((channels ?? []).map((channel) => [channel.id, channel.slug]))
 
+  const settings = codexSettings
+    ? {
+        codex_profile: codexSettings.codex_profile,
+        codex_model: codexSettings.codex_model,
+        codex_workspace_path: codexSettings.codex_workspace_path,
+        session_mode:
+          codexSettings.session_mode === "resume_last" ? "resume_last" : "new",
+      }
+    : DEFAULT_CODEX_SETTINGS
+
   return NextResponse.json({
+    codex_settings: settings,
     jobs: (jobs ?? []).map((job) => ({
       id: job.id,
       prompt: job.prompt,

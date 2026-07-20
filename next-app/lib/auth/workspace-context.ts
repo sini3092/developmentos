@@ -1,4 +1,5 @@
 import { cookies } from "next/headers"
+import { cache } from "react"
 import { redirect } from "next/navigation"
 
 import type {
@@ -28,7 +29,7 @@ export type WorkspaceContext = {
   unreadNotificationCount: number
 }
 
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async () => {
   const supabase = await createClient()
   const {
     data: { user },
@@ -42,9 +43,9 @@ export async function getCurrentUser() {
     id: user.id,
     email: user.email,
   }
-}
+})
 
-export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
+export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | null> => {
   const supabase = await createClient()
   const {
     data: { user },
@@ -103,11 +104,21 @@ export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
   let projects: ProjectWithMembership[] = []
 
   if (activeWorkspace) {
-    const { data: memberRows } = await supabase
-      .from("workspace_members")
-      .select("*")
-      .eq("workspace_id", activeWorkspace.id)
+    const [memberResult, projects, invitationsResult, unreadNotificationCount] = await Promise.all([
+      supabase.from("workspace_members").select("*").eq("workspace_id", activeWorkspace.id),
+      fetchWorkspaceProjects(activeWorkspace.id, user.id),
+      activeWorkspace.role === "owner" || activeWorkspace.role === "project_lead"
+        ? supabase
+            .from("workspace_invitations")
+            .select("*")
+            .eq("workspace_id", activeWorkspace.id)
+            .is("accepted_at", null)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [] as WorkspaceInvitation[] }),
+      getUnreadNotificationCount(activeWorkspace.id, user.id),
+    ])
 
+    const memberRows = memberResult.data
     const memberIds = memberRows?.map((member) => member.user_id) ?? []
     const { data: profileRows } =
       memberIds.length > 0
@@ -120,26 +131,25 @@ export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
         profile: profileRows?.find((item) => item.id === member.user_id) ?? null,
       })) ?? []
 
-    if (activeWorkspace.role === "owner" || activeWorkspace.role === "project_lead") {
-      const { data: invitations } = await supabase
-        .from("workspace_invitations")
-        .select("*")
-        .eq("workspace_id", activeWorkspace.id)
-        .is("accepted_at", null)
-        .order("created_at", { ascending: false })
+    pendingInvitations = invitationsResult.data ?? []
+    // projects assigned above
 
-      pendingInvitations = invitations ?? []
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+      },
+      profile,
+      workspaces,
+      activeWorkspace,
+      members,
+      pendingInvitations,
+      projects,
+      canCreateProjects:
+        activeWorkspace.role === "owner" || activeWorkspace.role === "project_lead",
+      unreadNotificationCount,
     }
-
-    projects = await fetchWorkspaceProjects(activeWorkspace.id, user.id)
   }
-
-  const canCreateProjects =
-    activeWorkspace?.role === "owner" || activeWorkspace?.role === "project_lead"
-
-  const unreadNotificationCount = activeWorkspace
-    ? await getUnreadNotificationCount(activeWorkspace.id, user.id)
-    : 0
 
   return {
     user: {
@@ -152,10 +162,10 @@ export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
     members,
     pendingInvitations,
     projects,
-    canCreateProjects,
-    unreadNotificationCount,
+    canCreateProjects: false,
+    unreadNotificationCount: 0,
   }
-}
+})
 
 export async function requireWorkspaceContext() {
   const context = await getWorkspaceContext()

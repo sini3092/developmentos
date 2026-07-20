@@ -3,23 +3,21 @@
  * Poll DevelopmentOS for @personal Codex jobs and run them locally.
  *
  * Usage:
- *   npm run codex-bridge -- --token YOUR_TOKEN --url http://localhost:3000
+ *   npm run codex-bridge -- --token YOUR_TOKEN --url https://developmentos.vercel.app
  *
- * Optional:
- *   --interval 5000   Poll interval in ms (default 5000)
- *   --cmd codex       Command to run (default: codex)
- *   --cwd /path       Working directory for Codex
+ * Codex profile, model, and workspace path are read from Settings in the app.
  */
 
 import { spawn } from "node:child_process"
-import { existsSync } from "node:fs"
-import { resolve } from "node:path"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { join, resolve } from "node:path"
 
 function parseArgs(argv) {
   const options = {
     token: "",
     url: "http://localhost:3000",
-    interval: 5000,
+    interval: 4000,
     cmd: "codex",
     cwd: process.cwd(),
   }
@@ -40,6 +38,69 @@ function parseArgs(argv) {
   }
 
   return options
+}
+
+function discoverLocalCodexCatalog() {
+  const codexDir = join(homedir(), ".codex")
+  const workspaces = new Set()
+  const models = new Set()
+
+  if (!existsSync(codexDir)) {
+    return { workspaces: [], models: [] }
+  }
+
+  try {
+    for (const file of readdirSync(codexDir)) {
+      if (file.endsWith(".config.toml")) {
+        const name = file.replace(/\.config\.toml$/, "")
+        if (name && name !== "config") {
+          workspaces.add(name)
+        }
+      }
+    }
+
+    const mainConfig = join(codexDir, "config.toml")
+    if (existsSync(mainConfig)) {
+      const text = readFileSync(mainConfig, "utf8")
+      for (const match of text.matchAll(/^\[profiles\.([^\]]+)\]/gm)) {
+        if (match[1]) workspaces.add(match[1])
+      }
+      for (const match of text.matchAll(/^model\s*=\s*"([^"]+)"/gm)) {
+        if (match[1]) models.add(match[1])
+      }
+    }
+  } catch {
+    return { workspaces: [], models: [] }
+  }
+
+  return {
+    workspaces: [...workspaces].sort(),
+    models: [...models].sort(),
+  }
+}
+
+let lastCatalogSyncAt = 0
+
+async function syncCatalog(url, token) {
+  const now = Date.now()
+  if (now - lastCatalogSyncAt < 60000) return
+  lastCatalogSyncAt = now
+
+  const catalog = discoverLocalCodexCatalog()
+  if (catalog.workspaces.length === 0 && catalog.models.length === 0) return
+
+  try {
+    await apiRequest(url, token, "/api/bridge/codex/catalog", {
+      method: "POST",
+      body: JSON.stringify(catalog),
+    })
+    console.log(
+      `[bridge] Synced Codex catalog: ${catalog.workspaces.length} workspace(s), ${catalog.models.length} model(s)`
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Catalog sync failed."
+    console.error(`[bridge] ${message}`)
+  }
 }
 
 async function apiRequest(url, token, path, init = {}) {
@@ -67,9 +128,30 @@ async function apiRequest(url, token, path, init = {}) {
   return data
 }
 
-function runCodex(cmd, cwd, prompt) {
+function buildCodexArgs(settings, prompt) {
+  const args = []
+
+  if (settings?.codex_profile) {
+    args.push("--profile", settings.codex_profile)
+  }
+  if (settings?.codex_model) {
+    args.push("--model", settings.codex_model)
+  }
+
+  if (settings?.session_mode === "resume_last") {
+    args.push("exec", "resume", "--last", prompt)
+  } else {
+    args.push("exec", prompt)
+  }
+
+  return args
+}
+
+function runCodex(cmd, cwd, settings, prompt, onProgress) {
+  const args = buildCodexArgs(settings, prompt)
+
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(cmd, ["exec", prompt], {
+    const child = spawn(cmd, args, {
       cwd,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -78,9 +160,21 @@ function runCodex(cmd, cwd, prompt) {
 
     let stdout = ""
     let stderr = ""
+    let lastProgressAt = 0
+
+    function maybeProgress(chunk, stream) {
+      const text = String(chunk).trim()
+      if (!text) return
+      const now = Date.now()
+      if (now - lastProgressAt < 8000) return
+      lastProgressAt = now
+      const preview = text.split("\n").find((line) => line.trim()) ?? text
+      onProgress(preview.slice(0, 500))
+    }
 
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk)
+      maybeProgress(chunk, "stdout")
     })
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk)
@@ -100,37 +194,78 @@ function runCodex(cmd, cwd, prompt) {
   })
 }
 
-async function processJob(options, job) {
+async function patchJob(url, token, jobId, body) {
+  await apiRequest(url, token, `/api/bridge/codex/jobs/${jobId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })
+}
+
+async function processJob(options, job, settings) {
+  const cwd = settings?.codex_workspace_path
+    ? resolve(settings.codex_workspace_path)
+    : options.cwd
+
+  if (!existsSync(cwd)) {
+    await patchJob(options.url, options.token, job.id, {
+      status: "failed",
+      error: `Workspace path does not exist: ${cwd}`,
+    })
+    return
+  }
+
   console.log(`[bridge] Claiming job ${job.id.slice(0, 8)}…`)
 
-  await apiRequest(options.url, options.token, `/api/bridge/codex/jobs/${job.id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ status: "running" }),
+  const profileLabel = settings?.codex_profile ? `profile \`${settings.codex_profile}\`` : "default profile"
+  const modelLabel = settings?.codex_model ? `model \`${settings.codex_model}\`` : "default model"
+
+  await patchJob(options.url, options.token, job.id, {
+    status: "running",
+    progress: `Personal (Codex) started a session (${profileLabel}, ${modelLabel}) in \`${cwd}\`.`,
   })
 
   try {
-    const result = await runCodex(options.cmd, options.cwd, job.prompt)
-    await apiRequest(options.url, options.token, `/api/bridge/codex/jobs/${job.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: "completed", result }),
+    const result = await runCodex(
+      options.cmd,
+      cwd,
+      settings,
+      job.prompt,
+      async (preview) => {
+        try {
+          await patchJob(options.url, options.token, job.id, {
+            status: "progress",
+            progress: `Personal (Codex) working…\n\n\`\`\`\n${preview}\n\`\`\``,
+          })
+        } catch {
+          // ignore progress errors
+        }
+      }
+    )
+
+    await patchJob(options.url, options.token, job.id, {
+      status: "completed",
+      result,
     })
     console.log(`[bridge] Completed job ${job.id.slice(0, 8)}`)
   } catch (error) {
     const message = error instanceof Error ? error.message : "Codex failed."
-    await apiRequest(options.url, options.token, `/api/bridge/codex/jobs/${job.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: "failed", error: message }),
+    await patchJob(options.url, options.token, job.id, {
+      status: "failed",
+      error: message,
     })
     console.error(`[bridge] Failed job ${job.id.slice(0, 8)}: ${message}`)
   }
 }
 
 async function poll(options) {
+  await syncCatalog(options.url, options.token)
+
   const data = await apiRequest(options.url, options.token, "/api/bridge/codex/jobs")
   const jobs = data.jobs ?? []
+  const settings = data.codex_settings ?? null
 
   for (const job of jobs) {
-    await processJob(options, job)
+    await processJob(options, job, settings)
   }
 }
 
@@ -138,18 +273,14 @@ async function main() {
   const options = parseArgs(process.argv.slice(2))
 
   if (!options.token) {
-    console.error("Missing --token. Generate one in Settings → Codex Bridge.")
-    process.exit(1)
-  }
-
-  if (!existsSync(options.cwd)) {
-    console.error(`Working directory does not exist: ${options.cwd}`)
+    console.error("Missing --token. Generate one in Settings → Personal / Codex.")
     process.exit(1)
   }
 
   console.log(`[bridge] Listening on ${options.url}`)
   console.log(`[bridge] Codex command: ${options.cmd}`)
-  console.log(`[bridge] Working directory: ${options.cwd}`)
+  console.log(`[bridge] Fallback cwd: ${options.cwd}`)
+  console.log("[bridge] Profile/model/workspace loaded from Settings on each poll.")
 
   while (true) {
     try {

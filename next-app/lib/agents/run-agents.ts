@@ -125,8 +125,7 @@ export async function runPersonalAgent(input: RunPersonalAgentInput) {
     p_channel_id: input.channelId,
     p_body:
       `Personal (Codex) received your request. Job \`${job.id.slice(0, 8)}\` is queued.\n\n` +
-      "Run the Codex bridge on your PC (Settings → Codex Bridge). " +
-      "I'll reply here when Codex picks it up and when the work is done.",
+      "Using your Codex settings from Settings. Start the bridge on your PC — I'll post updates here as Codex works.",
     p_agent_name: "personal",
     p_parent_message_id: input.messageId,
   })

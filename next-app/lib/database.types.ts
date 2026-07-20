@@ -1166,6 +1166,7 @@ export type Database = {
           prompt: string
           result: string | null
           error: string | null
+          codex_session_id: string | null
           created_by: string
           created_at: string
           updated_at: string
@@ -1181,6 +1182,7 @@ export type Database = {
           prompt: string
           result?: string | null
           error?: string | null
+          codex_session_id?: string | null
           created_by: string
           created_at?: string
           updated_at?: string
@@ -1196,7 +1198,38 @@ export type Database = {
           prompt?: string
           result?: string | null
           error?: string | null
+          codex_session_id?: string | null
           created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_codex_settings: {
+        Row: {
+          user_id: string
+          codex_profile: string | null
+          codex_model: string | null
+          codex_workspace_path: string | null
+          session_mode: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          codex_profile?: string | null
+          codex_model?: string | null
+          codex_workspace_path?: string | null
+          session_mode?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          user_id?: string
+          codex_profile?: string | null
+          codex_model?: string | null
+          codex_workspace_path?: string | null
+          session_mode?: string
           created_at?: string
           updated_at?: string
         }

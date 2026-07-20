@@ -71,6 +71,16 @@ export function ChannelFeed({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [channel.messages.length])
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        router.refresh()
+      }
+    }, 8000)
+
+    return () => window.clearInterval(interval)
+  }, [router])
+
   return (
     <div className="flex flex-1 flex-col">
       <header className="border-b border-border/60 px-6 py-4">

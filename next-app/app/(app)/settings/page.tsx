@@ -14,6 +14,7 @@ import {
 import { SoulsAiPanel } from "@/components/settings/souls-ai-panel"
 import { CodexBridgePanel } from "@/components/settings/codex-bridge-panel"
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context"
+import { getUserCodexSettings } from "@/lib/auth/codex-context"
 import { isPushConfigured } from "@/lib/push/vapid"
 import { createClient } from "@/lib/supabase/server"
 
@@ -38,7 +39,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const query = await searchParams
   const { activeWorkspace, user, profile, members, projects } = await requireWorkspaceContext()
   const github = await getGithubIntegrationStatus()
-  const [preferences, subscriptionCount, workspaceAi] = await Promise.all([
+  const [preferences, subscriptionCount, workspaceAi, codexSettings] = await Promise.all([
     getNotificationPreferences(user.id),
     getPushSubscriptionCount(user.id),
     activeWorkspace
@@ -51,6 +52,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           return data
         })
       : Promise.resolve(null),
+    getUserCodexSettings(user.id),
   ])
 
   return (
@@ -74,6 +76,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           connected={github.connected}
           username={github.connection?.github_username}
           statusMessage={getGithubStatusMessage(query.github)}
+          siteUrl={process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}
         />
         <PushNotificationsPanel
           preferences={preferences}
@@ -87,7 +90,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             model={workspaceAi?.openrouter_model ?? "google/gemini-2.0-flash-001"}
           />
         ) : null}
-        <CodexBridgePanel />
+        <CodexBridgePanel settings={codexSettings} />
         <div className="lg:col-span-2">
           <CreateMemberForm />
         </div>
