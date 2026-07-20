@@ -89,6 +89,7 @@ export async function processGithubPushEvent(
             author: latestCommit.author.name,
           }
         : null,
+      compare_url: payload.compare ?? null,
       repository_url: payload.repository.html_url,
     },
     p_message: summaryMessage,

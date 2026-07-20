@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       .limit(10),
     supabase
       .from("user_codex_settings")
-      .select("codex_profile, codex_model, codex_workspace_path, session_mode")
+      .select("codex_profile, codex_model, codex_workspace_path, codex_command, session_mode")
       .eq("user_id", auth.userId)
       .maybeSingle(),
   ])
@@ -56,6 +56,7 @@ export async function GET(request: Request) {
         codex_profile: codexSettings.codex_profile,
         codex_model: codexSettings.codex_model,
         codex_workspace_path: codexSettings.codex_workspace_path,
+        codex_command: codexSettings.codex_command,
         session_mode:
           codexSettings.session_mode === "resume_last" ? "resume_last" : "new",
       }

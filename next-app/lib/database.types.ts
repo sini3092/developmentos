@@ -1211,6 +1211,7 @@ export type Database = {
           codex_profile: string | null
           codex_model: string | null
           codex_workspace_path: string | null
+          codex_command: string | null
           session_mode: string
           discovered_workspaces: string[]
           discovered_models: string[]
@@ -1223,6 +1224,7 @@ export type Database = {
           codex_profile?: string | null
           codex_model?: string | null
           codex_workspace_path?: string | null
+          codex_command?: string | null
           session_mode?: string
           discovered_workspaces?: string[]
           discovered_models?: string[]
@@ -1235,6 +1237,7 @@ export type Database = {
           codex_profile?: string | null
           codex_model?: string | null
           codex_workspace_path?: string | null
+          codex_command?: string | null
           session_mode?: string
           discovered_workspaces?: string[]
           discovered_models?: string[]

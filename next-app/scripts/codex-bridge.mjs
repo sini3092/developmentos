@@ -8,7 +8,7 @@
  * Codex profile, model, and workspace path are read from Settings in the app.
  */
 
-import { spawn } from "node:child_process"
+import { spawn, execSync } from "node:child_process"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
@@ -38,6 +38,45 @@ function parseArgs(argv) {
   }
 
   return options
+}
+
+function resolveCodexCommand(cliOverride, settingsCommand) {
+  if (cliOverride && cliOverride !== "codex") {
+    return cliOverride
+  }
+  if (settingsCommand?.trim()) {
+    return settingsCommand.trim()
+  }
+  if (process.env.CODEX_CMD?.trim()) {
+    return process.env.CODEX_CMD.trim()
+  }
+
+  try {
+    const lookup = process.platform === "win32" ? "where.exe codex" : "which codex"
+    const result = execSync(lookup, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+    const line = result.split(/\r?\n/).map((entry) => entry.trim()).find(Boolean)
+    if (line) {
+      return line
+    }
+  } catch {
+    // continue to common install paths
+  }
+
+  const localAppData = process.env.LOCALAPPDATA ?? ""
+  const candidates = [
+    join(localAppData, "Programs", "codex", "codex.exe"),
+    join(localAppData, "Codex", "codex.exe"),
+    join(homedir(), ".codex", "bin", "codex.exe"),
+    join(homedir(), "AppData", "Roaming", "npm", "codex.cmd"),
+  ]
+
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  return cliOverride || "codex"
 }
 
 function discoverLocalCodexCatalog() {
@@ -149,11 +188,12 @@ function buildCodexArgs(settings, prompt) {
 
 function runCodex(cmd, cwd, settings, prompt, onProgress) {
   const args = buildCodexArgs(settings, prompt)
+  const useShell = process.platform === "win32" && !cmd.toLowerCase().endsWith(".exe")
 
   return new Promise((resolvePromise, reject) => {
     const child = spawn(cmd, args, {
       cwd,
-      shell: true,
+      shell: useShell,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
     })
@@ -225,8 +265,9 @@ async function processJob(options, job, settings) {
   })
 
   try {
+    const codexCmd = resolveCodexCommand(options.cmd, settings?.codex_command)
     const result = await runCodex(
-      options.cmd,
+      codexCmd,
       cwd,
       settings,
       job.prompt,

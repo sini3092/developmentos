@@ -16,7 +16,7 @@ import { QUICK_REACTIONS, renderMessageBody } from "@/lib/utils/mentions"
 import { getInitials } from "@/lib/utils/format"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { MentionTextarea } from "@/components/channels/mention-textarea"
 import { useDraftComposer } from "@/hooks/use-draft-composer"
 import { cn } from "@/lib/utils"
 
@@ -267,13 +267,14 @@ export function ChannelMessageItem({
             {replyDraft.queued ? (
               <p className="text-sm text-warning">Reply saved offline — it will send when you reconnect.</p>
             ) : null}
-            <Textarea
+            <MentionTextarea
               name="body"
               placeholder="Reply in thread..."
               rows={2}
               required
               value={replyDraft.value}
-              onChange={(event) => replyDraft.setValue(event.target.value)}
+              onChange={replyDraft.setValue}
+              members={memberProfiles}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
                   event.currentTarget.form?.requestSubmit()

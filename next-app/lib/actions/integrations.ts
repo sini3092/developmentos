@@ -120,6 +120,7 @@ export async function updateCodexSettings(
   const codexProfile = String(formData.get("codexProfile") ?? "").trim() || null
   const codexModel = String(formData.get("codexModel") ?? "").trim() || null
   const codexWorkspacePath = String(formData.get("codexWorkspacePath") ?? "").trim() || null
+  const codexCommand = String(formData.get("codexCommand") ?? "").trim() || null
   const sessionMode = String(formData.get("sessionMode") ?? "new")
   const normalizedSessionMode = sessionMode === "resume_last" ? "resume_last" : "new"
 
@@ -138,6 +139,7 @@ export async function updateCodexSettings(
       codex_profile: codexProfile,
       codex_model: codexModel,
       codex_workspace_path: codexWorkspacePath,
+      codex_command: codexCommand,
       session_mode: normalizedSessionMode,
       updated_at: new Date().toISOString(),
     },

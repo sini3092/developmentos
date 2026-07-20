@@ -5,6 +5,7 @@ export type UserCodexSettings = {
   codex_profile: string | null
   codex_model: string | null
   codex_workspace_path: string | null
+  codex_command: string | null
   session_mode: CodexSessionMode
   created_at: string
   updated_at: string
@@ -12,7 +13,7 @@ export type UserCodexSettings = {
 
 export type CodexSettingsView = Pick<
   UserCodexSettings,
-  "codex_profile" | "codex_model" | "codex_workspace_path" | "session_mode"
+  "codex_profile" | "codex_model" | "codex_workspace_path" | "codex_command" | "session_mode"
 > & {
   discovered_workspaces: string[]
   discovered_models: string[]
@@ -23,6 +24,7 @@ export const DEFAULT_CODEX_SETTINGS: CodexSettingsView = {
   codex_profile: null,
   codex_model: null,
   codex_workspace_path: null,
+  codex_command: null,
   session_mode: "new",
   discovered_workspaces: [],
   discovered_models: [],

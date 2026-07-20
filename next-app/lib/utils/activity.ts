@@ -35,3 +35,35 @@ export function formatActivityEventMessage(
 
   return "Project activity recorded."
 }
+
+export function getActivityEventUrl(eventType: string, newValue: unknown) {
+  if (!newValue || typeof newValue !== "object") {
+    return null
+  }
+
+  const value = newValue as {
+    latest_commit?: { url?: string }
+    compare_url?: string | null
+    pr_url?: string
+    repository_url?: string
+    branch_name?: string
+  }
+
+  if (eventType === "github.pull_request" && value.pr_url) {
+    return value.pr_url
+  }
+
+  if (eventType === "github.push" || eventType === "github.commit") {
+    if (value.latest_commit?.url) {
+      return value.latest_commit.url
+    }
+    if (value.compare_url) {
+      return value.compare_url
+    }
+    if (value.repository_url && value.branch_name) {
+      return `${value.repository_url}/commits/${value.branch_name}`
+    }
+  }
+
+  return null
+}

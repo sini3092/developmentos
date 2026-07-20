@@ -7,8 +7,8 @@ import { postChannelMessage } from "@/lib/actions/channels"
 import type { ChannelWithMessageTree } from "@/lib/auth/channels-context"
 import type { ProjectMemberWithProfile } from "@/lib/database.types"
 import { ChannelMessageItem } from "@/components/channels/channel-message-item"
+import { MentionTextarea } from "@/components/channels/mention-textarea"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { useDraftComposer } from "@/hooks/use-draft-composer"
 
 type ChannelFeedProps = {
@@ -150,13 +150,14 @@ export function ChannelFeed({
                   Message saved offline — it will send when you reconnect.
                 </p>
               ) : null}
-              <Textarea
+              <MentionTextarea
                 name="body"
-                placeholder={`Message #${channel.name.toLowerCase()} — @souls for AI, @personal for Codex, @Name to mention`}
+                placeholder={`Message #${channel.name.toLowerCase()} — type @ for Souls, Personal, or teammates`}
                 rows={3}
                 required
                 value={draft.value}
-                onChange={(event) => draft.setValue(event.target.value)}
+                onChange={draft.setValue}
+                members={memberProfiles}
               />
               <div className="flex justify-end">
                 <Button type="submit" disabled={pending || !draft.value.trim()}>

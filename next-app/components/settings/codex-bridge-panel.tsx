@@ -119,6 +119,19 @@ export function CodexBridgePanel({ settings }: CodexBridgePanelProps) {
             />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="codex-command">Codex-kommando (valgfritt)</Label>
+            <Input
+              id="codex-command"
+              name="codexCommand"
+              defaultValue={settings.codex_command ?? ""}
+              placeholder="C:\Users\...\AppData\Local\Programs\codex\codex.exe"
+            />
+            <p className="text-xs text-muted-foreground">
+              Fyll ut hvis du får «codex is not recognized». Finn stien med{" "}
+              <code className="rounded bg-muted px-1">where codex</code> i PowerShell.
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="session-mode">Codex-samtale</Label>
             <select
               id="session-mode"
