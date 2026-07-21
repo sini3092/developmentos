@@ -24,6 +24,7 @@ type TaskChecklistSectionProps = {
   items: ChecklistItemWithCompleter[]
   members: ProjectMemberWithProfile[]
   canEdit: boolean
+  highlightedItemIds?: Set<string>
 }
 
 export function TaskChecklistSection({
@@ -31,6 +32,7 @@ export function TaskChecklistSection({
   slug,
   items,
   canEdit,
+  highlightedItemIds,
 }: TaskChecklistSectionProps) {
   const router = useRouter()
   const [addState, addAction, addPending] = useActionState(addChecklistItem, {})
@@ -77,7 +79,10 @@ export function TaskChecklistSection({
           {items.map((item) => (
             <li
               key={item.id}
-              className="flex items-start gap-2 rounded-lg border border-border/60 bg-surface-raised/30 px-3 py-2"
+              className={cn(
+                "flex items-start gap-2 rounded-lg border border-border/60 bg-surface-raised/30 px-3 py-2",
+                highlightedItemIds?.has(item.id) && "remote-update-pulse ring-2 ring-info/50"
+              )}
             >
               <input
                 type="checkbox"

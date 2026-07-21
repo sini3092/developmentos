@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { LayoutGroup } from "motion/react"
 import {
   DndContext,
   DragOverlay,
@@ -37,6 +38,8 @@ type KanbanBoardProps = {
   projectLabels: Label[]
   milestones: Array<Pick<Milestone, "id" | "name">>
   canEdit: boolean
+  highlightedTaskIds?: Set<string>
+  onDragActiveChange?: (active: boolean) => void
 }
 
 export function KanbanBoard({
@@ -47,6 +50,8 @@ export function KanbanBoard({
   projectLabels,
   milestones,
   canEdit,
+  highlightedTaskIds,
+  onDragActiveChange,
 }: KanbanBoardProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -106,6 +111,7 @@ export function KanbanBoard({
 
   function handleDragStart(event: DragStartEvent) {
     setActiveTaskId(String(event.active.id))
+    onDragActiveChange?.(true)
   }
 
   function handleDragOver(event: DragOverEvent) {
@@ -140,6 +146,7 @@ export function KanbanBoard({
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     setActiveTaskId(null)
+    onDragActiveChange?.(false)
 
     if (!canEdit || !over) {
       return
@@ -196,18 +203,25 @@ export function KanbanBoard({
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
+        onDragCancel={() => {
+          setActiveTaskId(null)
+          onDragActiveChange?.(false)
+        }}
       >
-        <div className="flex gap-4 overflow-x-auto pb-2">
-          {KANBAN_COLUMNS.map((status) => (
-            <KanbanColumn
-              key={status}
-              status={status}
-              tasks={columns[status]}
-              onOpenTask={openTask}
-              canEdit={canEdit}
-            />
-          ))}
-        </div>
+        <LayoutGroup id={`kanban-${projectId}`}>
+          <div className="flex gap-4 overflow-x-auto pb-2">
+            {KANBAN_COLUMNS.map((status) => (
+              <KanbanColumn
+                key={status}
+                status={status}
+                tasks={columns[status]}
+                onOpenTask={openTask}
+                canEdit={canEdit}
+                highlightedTaskIds={highlightedTaskIds}
+              />
+            ))}
+          </div>
+        </LayoutGroup>
 
         <DragOverlay>
           {activeTask ? <KanbanCardOverlay task={activeTask} /> : null}

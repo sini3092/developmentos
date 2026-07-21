@@ -15,6 +15,7 @@ type KanbanCardProps = {
   onOpen: (taskId: string) => void
   isDragging?: boolean
   canEdit: boolean
+  isRemoteHighlight?: boolean
 }
 
 export function KanbanCard({
@@ -22,6 +23,7 @@ export function KanbanCard({
   onOpen,
   isDragging = false,
   canEdit,
+  isRemoteHighlight = false,
 }: KanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSorting } =
     useSortable({
@@ -41,6 +43,7 @@ export function KanbanCard({
       className={cn(
         "rounded-lg border border-border/60 bg-card p-3 shadow-xs transition-shadow",
         (isDragging || isSorting) && "opacity-60 ring-2 ring-primary/30",
+        isRemoteHighlight && "remote-update-pulse ring-2 ring-info/50",
         canEdit && "cursor-grab active:cursor-grabbing"
       )}
       {...attributes}

@@ -5,6 +5,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
+import { AnimatePresence, motion } from "motion/react"
 
 import type { TaskWithPeople } from "@/lib/auth/task-context"
 import type { TaskStatus } from "@/lib/database.types"
@@ -20,6 +21,7 @@ type KanbanColumnProps = {
   tasks: TaskWithPeople[]
   onOpenTask: (taskId: string) => void
   canEdit: boolean
+  highlightedTaskIds?: Set<string>
 }
 
 export function KanbanColumn({
@@ -27,6 +29,7 @@ export function KanbanColumn({
   tasks,
   onOpenTask,
   canEdit,
+  highlightedTaskIds,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status })
 
@@ -56,14 +59,26 @@ export function KanbanColumn({
           items={tasks.map((task) => task.id)}
           strategy={verticalListSortingStrategy}
         >
-          {tasks.map((task) => (
-            <KanbanCard
-              key={task.id}
-              task={task}
-              onOpen={onOpenTask}
-              canEdit={canEdit}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {tasks.map((task) => (
+              <motion.div
+                key={task.id}
+                layout
+                layoutId={`kanban-task-${task.id}`}
+                initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: -8 }}
+                transition={{ type: "spring", stiffness: 420, damping: 32, mass: 0.8 }}
+              >
+                <KanbanCard
+                  task={task}
+                  onOpen={onOpenTask}
+                  canEdit={canEdit}
+                  isRemoteHighlight={highlightedTaskIds?.has(task.id) ?? false}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </SortableContext>
 
         {tasks.length === 0 ? (

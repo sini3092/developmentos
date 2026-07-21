@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useMemo, useState, useTransition } from "react"
+import { motion } from "motion/react"
 import { MessageSquare } from "lucide-react"
 
 import { TaskChecklistSection } from "@/components/tasks/task-checklist-section"
@@ -40,6 +41,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useDraftComposer } from "@/hooks/use-draft-composer"
 import { getInitials } from "@/lib/utils/format"
+import { cn } from "@/lib/utils"
 
 type TaskDetailSheetProps = {
   task: TaskDetail | null
@@ -50,6 +52,8 @@ type TaskDetailSheetProps = {
   repoOwner?: string | null
   repoName?: string | null
   canEdit: boolean
+  highlightedCommentIds?: Set<string>
+  highlightedChecklistIds?: Set<string>
 }
 
 export function TaskDetailSheet({
@@ -61,6 +65,8 @@ export function TaskDetailSheet({
   repoOwner,
   repoName,
   canEdit,
+  highlightedCommentIds,
+  highlightedChecklistIds,
 }: TaskDetailSheetProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -285,6 +291,7 @@ export function TaskDetailSheet({
             items={task.checklist_items}
             members={members}
             canEdit={canEdit}
+            highlightedItemIds={highlightedChecklistIds}
           />
 
           <TaskGithubSection
@@ -304,9 +311,16 @@ export function TaskDetailSheet({
             </h3>
             <div className="space-y-3">
               {task.comments.map((comment) => (
-                <div
+                <motion.div
                   key={comment.id}
-                  className="rounded-lg border border-border/60 bg-surface-raised/50 p-3"
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                  className={cn(
+                    "rounded-lg border border-border/60 bg-surface-raised/50 p-3",
+                    highlightedCommentIds?.has(comment.id) && "remote-update-pulse ring-2 ring-info/50"
+                  )}
                 >
                   <div className="mb-2 flex items-center gap-2">
                     <Avatar className="size-6 rounded-md">
@@ -322,7 +336,7 @@ export function TaskDetailSheet({
                     </span>
                   </div>
                   <p className="text-sm whitespace-pre-wrap">{comment.body}</p>
-                </div>
+                </motion.div>
               ))}
             </div>
             {canEdit ? (

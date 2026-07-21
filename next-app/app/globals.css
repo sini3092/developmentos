@@ -181,3 +181,22 @@ html[data-density="compact"] [data-slot="sidebar-menu-button"] {
 html[data-density="compact"] .p-6 {
   padding: 1.25rem;
 }
+
+@keyframes remote-update-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--info) 45%, transparent);
+    background-color: color-mix(in oklch, var(--info) 12%, var(--card));
+  }
+  70% {
+    box-shadow: 0 0 0 10px transparent;
+    background-color: color-mix(in oklch, var(--info) 4%, var(--card));
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: var(--card);
+  }
+}
+
+.remote-update-pulse {
+  animation: remote-update-pulse 1.4s ease-out;
+}
