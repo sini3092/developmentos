@@ -78,18 +78,18 @@ export function ProjectRoadmap({
         <div>
           <h2 className="text-sm font-semibold">Work pipeline</h2>
           <p className="text-sm text-muted-foreground">
-            Every task in the project, grouped by status. Updates live from the board and checklists.
+            Tasks grouped by board list. Progress comes from checklists on the task board.
           </p>
         </div>
-        <RoadmapStatusPipeline breakdown={view.breakdown} totalTasks={view.totalTasks} />
+        <RoadmapStatusPipeline listBreakdown={view.listBreakdown} totalTasks={view.totalTasks} />
       </section>
 
       <div className="grid gap-8 xl:grid-cols-2">
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">Active now</h2>
-              <p className="text-sm text-muted-foreground">Ready, in progress, and in review</p>
+              <h2 className="text-sm font-semibold">In progress</h2>
+              <p className="text-sm text-muted-foreground">Tasks with checklist progress started</p>
             </div>
             <Link href={`/projects/${slug}/tasks/board`} className="text-sm text-info hover:underline">
               Board
@@ -98,43 +98,33 @@ export function ProjectRoadmap({
           <RoadmapTaskList
             tasks={view.activeWork}
             slug={slug}
-            emptyMessage="No active work right now. Move tasks to Ready or In Progress on the board."
+            emptyMessage="No tasks in progress. Add checklist items or move work on the board."
           />
         </section>
 
         <section className="space-y-3">
           <div>
-            <h2 className="text-sm font-semibold">Recently shipped</h2>
-            <p className="text-sm text-muted-foreground">Completed tasks, newest first</p>
+            <h2 className="text-sm font-semibold">Recently completed</h2>
+            <p className="text-sm text-muted-foreground">Tasks at 100% progress, newest first</p>
           </div>
           <RoadmapTaskList
             tasks={view.recentlyCompleted}
             slug={slug}
-            emptyMessage="Nothing completed yet. Finish tasks on the board to see them here."
+            emptyMessage="Nothing completed yet. Finish checklists on the board to see tasks here."
           />
         </section>
       </div>
 
-      {view.blockedWork.length > 0 ? (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-danger">Blocked</h2>
-          <RoadmapTaskList
-            tasks={view.blockedWork}
-            slug={slug}
-            emptyMessage="No blocked tasks."
-          />
-        </section>
-      ) : null}
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-sm font-semibold">Up next</h2>
-          <p className="text-sm text-muted-foreground">Backlog and other open work waiting to start</p>
+          <h2 className="text-sm font-semibold">Not started</h2>
+          <p className="text-sm text-muted-foreground">Open tasks with 0% checklist progress</p>
         </div>
         <RoadmapTaskList
           tasks={view.remainingWork}
           slug={slug}
-          emptyMessage="No backlog items. Everything is either active or done."
+          emptyMessage="No waiting tasks. Everything is either in progress or complete."
         />
       </section>
 

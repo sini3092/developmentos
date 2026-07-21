@@ -2,11 +2,9 @@ import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
 
 import type { InitiativeWithOwner } from "@/lib/database.types"
-import { TASK_STATUS_LABELS } from "@/lib/constants/tasks"
 import { HealthBadge } from "@/components/roadmap/health-badge"
 import { ProgressBar } from "@/components/roadmap/progress-bar"
 import { TaskStatusBreakdown } from "@/components/roadmap/task-status-breakdown"
-import { Badge } from "@/components/ui/badge"
 import { deriveDisplayHealth } from "@/lib/utils/roadmap"
 
 type InitiativeCardProps = {
@@ -71,9 +69,9 @@ export function InitiativeCard({ initiative, slug }: InitiativeCardProps) {
                   <span className="font-mono text-muted-foreground">{task.identifier}</span>{" "}
                   {task.title}
                 </span>
-                <Badge variant="outline" className="shrink-0 font-normal">
-                  {TASK_STATUS_LABELS[task.status]}
-                </Badge>
+                <span className="shrink-0 text-muted-foreground">
+                  {Math.max(0, 100 - task.progress)}% left
+                </span>
               </li>
             ))}
           </ul>

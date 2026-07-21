@@ -1,4 +1,4 @@
-import type { InitiativeHealth, PlanningHorizon, TaskStatus } from "@/lib/database.types"
+import type { InitiativeHealth } from "@/lib/database.types"
 import type { InitiativeWithOwner } from "@/lib/database.types"
 
 export type InitiativeTaskBreakdown = {
@@ -10,11 +10,18 @@ export type InitiativeTaskBreakdown = {
   backlog: number
 }
 
+export type RoadmapListBucket = {
+  list_id: string | null
+  list_name: string
+  color: string
+  count: number
+}
+
 export type InitiativeTaskPreview = {
   id: string
   identifier: string
   title: string
-  status: TaskStatus
+  status: string
   progress: number
 }
 
@@ -28,28 +35,22 @@ export type RoadmapBoardStats = {
   initiativesWithWork: number
 }
 
-const HORIZON_ACCENTS: Record<PlanningHorizon, string> = {
-  now: "border-l-info bg-info/5",
-  next: "border-l-warning bg-warning/5",
-  later: "border-l-muted-foreground/40 bg-muted/20",
+export function isTaskComplete(progress: number | null | undefined) {
+  return (progress ?? 0) >= 100
 }
 
-const HORIZON_HEADER: Record<PlanningHorizon, string> = {
-  now: "text-info",
-  next: "text-warning",
-  later: "text-muted-foreground",
+export function isTaskInProgress(progress: number | null | undefined) {
+  const value = progress ?? 0
+  return value > 0 && value < 100
 }
 
-export function getHorizonAccent(horizon: PlanningHorizon) {
-  return HORIZON_ACCENTS[horizon]
+export function remainingPercent(progress: number | null | undefined) {
+  return Math.max(0, Math.min(100, 100 - (progress ?? 0)))
 }
 
-export function getHorizonHeaderClass(horizon: PlanningHorizon) {
-  return HORIZON_HEADER[horizon]
-}
-
+/** Progress-based breakdown mapped onto legacy keys for existing UI components. */
 export function buildTaskBreakdown(
-  tasks: Array<{ status: TaskStatus }>
+  tasks: Array<{ progress?: number | null }>
 ): InitiativeTaskBreakdown {
   const breakdown: InitiativeTaskBreakdown = {
     done: 0,
@@ -61,12 +62,47 @@ export function buildTaskBreakdown(
   }
 
   for (const task of tasks) {
-    if (task.status in breakdown) {
-      breakdown[task.status as keyof InitiativeTaskBreakdown] += 1
+    const progress = task.progress ?? 0
+    if (isTaskComplete(progress)) {
+      breakdown.done += 1
+    } else if (isTaskInProgress(progress)) {
+      breakdown.in_progress += 1
+    } else {
+      breakdown.backlog += 1
     }
   }
 
   return breakdown
+}
+
+export function buildListBreakdown(
+  tasks: Array<{ list_id: string | null }>,
+  lists: Array<{ id: string; name: string; color: string }>
+): RoadmapListBucket[] {
+  const counts = new Map<string | null, number>()
+
+  for (const task of tasks) {
+    counts.set(task.list_id, (counts.get(task.list_id) ?? 0) + 1)
+  }
+
+  const buckets: RoadmapListBucket[] = lists.map((list) => ({
+    list_id: list.id,
+    list_name: list.name,
+    color: list.color,
+    count: counts.get(list.id) ?? 0,
+  }))
+
+  const unlisted = counts.get(null) ?? 0
+  if (unlisted > 0) {
+    buckets.push({
+      list_id: null,
+      list_name: "No list",
+      color: "slate",
+      count: unlisted,
+    })
+  }
+
+  return buckets.filter((bucket) => bucket.count > 0)
 }
 
 export function computeBoardStats(
@@ -103,17 +139,6 @@ export function computeBoardStats(
   }
 }
 
-export function computeColumnProgress(initiatives: InitiativeWithOwner[]) {
-  const withTasks = initiatives.filter((initiative) => initiative.task_count > 0)
-  if (withTasks.length === 0) {
-    return 0
-  }
-
-  return Math.round(
-    withTasks.reduce((sum, initiative) => sum + initiative.progress, 0) / withTasks.length
-  )
-}
-
 export function deriveDisplayHealth(
   health: InitiativeHealth,
   breakdown: InitiativeTaskBreakdown | undefined,
@@ -121,10 +146,6 @@ export function deriveDisplayHealth(
 ): InitiativeHealth {
   if (taskCount === 0) {
     return "no_status"
-  }
-
-  if (breakdown?.blocked && breakdown.blocked > 0) {
-    return health === "off_track" ? "off_track" : "at_risk"
   }
 
   if (health !== "no_status") {
@@ -135,7 +156,7 @@ export function deriveDisplayHealth(
     return "on_track"
   }
 
-  if ((breakdown?.in_progress ?? 0) > 0 || (breakdown?.in_review ?? 0) > 0) {
+  if ((breakdown?.in_progress ?? 0) > 0) {
     return "on_track"
   }
 

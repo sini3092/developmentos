@@ -1,6 +1,5 @@
 import Link from "next/link"
 import {
-  AlertTriangle,
   CheckCircle2,
   CircleDashed,
   GitBranch,
@@ -24,24 +23,24 @@ export function ProjectRoadmapOverview({ view, slug }: ProjectRoadmapOverviewPro
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Project progress
+              Avg progress
             </p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{view.completionRate}%</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{view.averageProgress}%</p>
           </div>
           <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Target className="size-5" />
           </div>
         </div>
-        <ProgressBar value={view.completionRate} className="mt-3 h-2" />
+        <ProgressBar value={view.averageProgress} className="mt-3 h-2" />
         <p className="mt-2 text-xs text-muted-foreground">
-          Avg checklist {view.averageProgress}% across all tasks
+          Checklist progress across all {view.totalTasks} tasks
         </p>
       </article>
 
       <article className="rounded-xl border border-border/60 bg-card p-4 shadow-xs">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Done</p>
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Complete</p>
             <p className="mt-1 text-2xl font-semibold tabular-nums">
               {view.doneTasks}
               <span className="text-base font-normal text-muted-foreground">/{view.totalTasks}</span>
@@ -51,7 +50,9 @@ export function ProjectRoadmapOverview({ view, slug }: ProjectRoadmapOverviewPro
             <CheckCircle2 className="size-5" />
           </div>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">{view.openTasks} tasks remaining</p>
+        <p className="mt-3 text-xs text-muted-foreground">
+          {view.completionRate}% of tasks at 100% progress
+        </p>
       </article>
 
       <article className="rounded-xl border border-border/60 bg-card p-4 shadow-xs">
@@ -67,28 +68,7 @@ export function ProjectRoadmapOverview({ view, slug }: ProjectRoadmapOverviewPro
           </div>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          {view.activeWork.length} active right now (ready, review, or in progress)
-        </p>
-      </article>
-
-      <article className="rounded-xl border border-border/60 bg-card p-4 shadow-xs">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Blocked
-            </p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{view.blockedTasks}</p>
-          </div>
-          <div
-            className={`flex size-10 items-center justify-center rounded-lg ${
-              view.blockedTasks > 0 ? "bg-danger/10 text-danger" : "bg-muted text-muted-foreground"
-            }`}
-          >
-            <AlertTriangle className="size-5" />
-          </div>
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          {view.blockedTasks > 0 ? "Needs attention before work can continue." : "Nothing blocked."}
+          Tasks with checklist work started but not finished
         </p>
       </article>
 

@@ -8,7 +8,7 @@ import type {
   TaskStatus,
 } from "@/lib/database.types"
 import { createClient } from "@/lib/supabase/server"
-import { buildTaskBreakdown } from "@/lib/utils/roadmap"
+import { buildTaskBreakdown, isTaskComplete } from "@/lib/utils/roadmap"
 
 export type RoadmapStats = {
   initiatives: number
@@ -104,14 +104,14 @@ export async function getProjectInitiatives(
 
   return withOwners.map((initiative) => {
     const linkedTasks = tasks?.filter((task) => task.initiative_id === initiative.id) ?? []
-    const doneCount = linkedTasks.filter((task) => task.status === "done").length
+    const doneCount = linkedTasks.filter((task) => isTaskComplete(task.progress)).length
     const openCount = linkedTasks.length - doneCount
-    const blockedCount = linkedTasks.filter((task) => task.status === "blocked").length
+    const blockedCount = 0
     const breakdown = buildTaskBreakdown(linkedTasks)
     const recentTasks = [...linkedTasks]
       .sort((a, b) => {
-        const aDone = a.status === "done" ? 1 : 0
-        const bDone = b.status === "done" ? 1 : 0
+        const aDone = isTaskComplete(a.progress) ? 1 : 0
+        const bDone = isTaskComplete(b.progress) ? 1 : 0
         if (aDone !== bDone) return aDone - bDone
         return (b.progress ?? 0) - (a.progress ?? 0)
       })
@@ -218,7 +218,7 @@ export async function getInitiativeDetail(
 
   const [withOwner] = await attachProfiles([initiative])
 
-  const doneCount = linkedTasks.filter((task) => task.status === "done").length
+  const doneCount = linkedTasks.filter((task) => isTaskComplete(task.progress)).length
   const breakdown = buildTaskBreakdown(linkedTasks)
 
   return {
@@ -227,7 +227,7 @@ export async function getInitiativeDetail(
     task_count: linkedTasks.length,
     task_done_count: doneCount,
     task_open_count: linkedTasks.length - doneCount,
-    task_blocked_count: linkedTasks.filter((task) => task.status === "blocked").length,
+    task_blocked_count: 0,
     task_status_breakdown: breakdown,
     linked_tasks: linkedTasks,
     updates:

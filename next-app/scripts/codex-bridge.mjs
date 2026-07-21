@@ -11,7 +11,17 @@
 import { spawn, execSync } from "node:child_process"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+
+import {
+  formatCodexNotFoundError,
+  loadBridgeEnv,
+  resolveCodexCommand,
+} from "./lib/resolve-codex-cli.mjs"
+
+const bridgeRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
+const bridgeEnv = loadBridgeEnv(bridgeRoot)
 
 function parseArgs(argv) {
   const options = {
@@ -38,64 +48,6 @@ function parseArgs(argv) {
   }
 
   return options
-}
-
-function resolveCodexCommand(cliOverride, settingsCommand) {
-  if (cliOverride && cliOverride !== "codex") {
-    return cliOverride
-  }
-  if (settingsCommand?.trim()) {
-    return settingsCommand.trim()
-  }
-  if (process.env.CODEX_CMD?.trim()) {
-    return process.env.CODEX_CMD.trim()
-  }
-
-  try {
-    const lookup = process.platform === "win32" ? "where.exe codex" : "which codex"
-    const result = execSync(lookup, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
-    const line = result.split(/\r?\n/).map((entry) => entry.trim()).find(Boolean)
-    if (line) {
-      return line
-    }
-  } catch {
-    // continue to common install paths
-  }
-
-  const localAppData = process.env.LOCALAPPDATA ?? ""
-  const candidates = [
-    join(localAppData, "Programs", "codex", "codex.exe"),
-    join(localAppData, "Codex", "codex.exe"),
-    join(homedir(), ".codex", "bin", "codex.exe"),
-    join(homedir(), "AppData", "Roaming", "npm", "codex.cmd"),
-  ]
-
-  for (const candidate of candidates) {
-    if (candidate && existsSync(candidate)) {
-      return candidate
-    }
-  }
-
-  try {
-    const npmPrefix = execSync("npm prefix -g", {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim()
-    const npmCandidates = [
-      join(npmPrefix, "codex.cmd"),
-      join(npmPrefix, "codex"),
-      join(npmPrefix, "codex.exe"),
-    ]
-    for (const candidate of npmCandidates) {
-      if (existsSync(candidate)) {
-        return candidate
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return cliOverride || "codex"
 }
 
 function discoverLocalCodexCatalog() {
@@ -326,16 +278,17 @@ async function processJob(options, job, settings) {
   })
 
   try {
-    const codexCmd = resolveCodexCommand(options.cmd, settings?.codex_command)
-    if (codexCmd === "codex" && process.platform === "win32") {
-      try {
-        execSync("where.exe codex", { stdio: "ignore" })
-      } catch {
-        throw new Error(
-          "Codex CLI not found on PATH. Run: npm install -g @openai/codex — the desktop app alone does not power @personal."
-        )
-      }
+    const resolution = resolveCodexCommand({
+      cliOverride: options.cmd,
+      settingsCommand: settings?.codex_command,
+      bridgeEnv,
+    })
+    const codexCmd = resolution.command
+
+    if (!resolution.found && !existsSync(codexCmd)) {
+      throw new Error(formatCodexNotFoundError(resolution))
     }
+
     const result = await runCodex(
       codexCmd,
       cwd,
@@ -361,9 +314,12 @@ async function processJob(options, job, settings) {
   } catch (error) {
     let message = error instanceof Error ? error.message : "Codex failed."
     if (/not recognized|ENOENT/i.test(message)) {
-      message =
-        "Codex CLI not found. Install with: npm install -g @openai/codex — then restart the bridge. " +
-        "The Codex desktop app alone is not enough for @personal."
+      const resolution = resolveCodexCommand({
+        cliOverride: options.cmd,
+        settingsCommand: settings?.codex_command,
+        bridgeEnv,
+      })
+      message = formatCodexNotFoundError(resolution)
     } else if (/unexpected argument/i.test(message)) {
       message =
         `${message} This often happens when a multi-word prompt was split by Windows. Restart the bridge after updating — if it persists, try a shorter prompt or disable resume-last in Settings.`
@@ -396,8 +352,21 @@ async function main() {
     process.exit(1)
   }
 
+  if (bridgeEnv.CODEX_CMD) {
+    process.env.CODEX_CMD = bridgeEnv.CODEX_CMD
+  }
+
+  const startupResolution = resolveCodexCommand({
+    cliOverride: options.cmd,
+    bridgeEnv,
+  })
+
   console.log(`[bridge] Listening on ${options.url}`)
-  console.log(`[bridge] Codex command: ${options.cmd}`)
+  console.log(`[bridge] Codex CLI: ${startupResolution.displayPath}`)
+  if (!startupResolution.found) {
+    console.warn("[bridge] Warning: Codex CLI was not resolved yet. Jobs may fail until it is installed.")
+    console.warn("[bridge] Set CODEX_CMD in .env.bridge.local or Codex-kommando in Settings.")
+  }
   console.log(`[bridge] Fallback cwd: ${options.cwd}`)
   console.log("[bridge] Profile/model/workspace loaded from Settings on each poll.")
 

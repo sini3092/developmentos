@@ -1,20 +1,24 @@
-import type {
-  InitiativeWithOwner,
-  Profile,
-  TaskStatus,
-} from "@/lib/database.types"
+import type { InitiativeWithOwner, Profile } from "@/lib/database.types"
 import { createClient } from "@/lib/supabase/server"
 import { getProjectGithubHistory, type GithubHistoryEvent } from "@/lib/auth/github-history-context"
-import { buildTaskBreakdown, type InitiativeTaskBreakdown } from "@/lib/utils/roadmap"
+import {
+  buildListBreakdown,
+  buildTaskBreakdown,
+  isTaskComplete,
+  isTaskInProgress,
+  type InitiativeTaskBreakdown,
+  type RoadmapListBucket,
+} from "@/lib/utils/roadmap"
 import { getProjectInitiatives } from "@/lib/auth/roadmap-context"
 
 export type RoadmapTaskItem = {
   id: string
   identifier: string
   title: string
-  status: TaskStatus
   progress: number
+  remaining: number
   updated_at: string
+  list_name: string | null
   initiative: { name: string; slug: string } | null
   assignee_name: string | null
 }
@@ -35,10 +39,10 @@ export type RoadmapActivityItem =
 
 export type ProjectRoadmapView = {
   breakdown: InitiativeTaskBreakdown
+  listBreakdown: RoadmapListBucket[]
   totalTasks: number
   doneTasks: number
   openTasks: number
-  blockedTasks: number
   inProgressTasks: number
   unlinkedTaskCount: number
   averageProgress: number
@@ -46,7 +50,6 @@ export type ProjectRoadmapView = {
   recentlyCompleted: RoadmapTaskItem[]
   activeWork: RoadmapTaskItem[]
   remainingWork: RoadmapTaskItem[]
-  blockedWork: RoadmapTaskItem[]
   unlinkedTasks: RoadmapTaskItem[]
   initiatives: InitiativeWithOwner[]
   githubEvents: GithubHistoryEvent[]
@@ -54,8 +57,6 @@ export type ProjectRoadmapView = {
   githubPullRequestCount: number
   recentActivity: RoadmapActivityItem[]
 }
-
-const ACTIVE_STATUSES: TaskStatus[] = ["in_progress", "in_review", "ready"]
 
 function buildRecentActivity(
   githubEvents: GithubHistoryEvent[],
@@ -86,19 +87,29 @@ function buildRecentActivity(
 export async function getProjectRoadmapView(projectId: string): Promise<ProjectRoadmapView> {
   const supabase = await createClient()
 
-  const [{ data: tasks }, initiatives, githubEvents] = await Promise.all([
+  const [{ data: tasks }, { data: lists }, initiatives, githubEvents] = await Promise.all([
     supabase
       .from("tasks")
-      .select("id, identifier, title, status, progress, updated_at, initiative_id, assignee_id")
+      .select(
+        "id, identifier, title, progress, updated_at, initiative_id, assignee_id, list_id"
+      )
       .eq("project_id", projectId)
       .is("deleted_at", null)
       .neq("status", "cancelled")
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("board_lists")
+      .select("id, name, color, position")
+      .eq("project_id", projectId)
+      .order("position", { ascending: true }),
     getProjectInitiatives(projectId),
     getProjectGithubHistory(projectId, 25),
   ])
 
   const taskRows = tasks ?? []
+  const listRows = lists ?? []
+  const listNameById = new Map(listRows.map((list) => [list.id, list.name]))
+
   const initiativeIds = [
     ...new Set(taskRows.map((task) => task.initiative_id).filter(Boolean)),
   ] as string[]
@@ -123,29 +134,29 @@ export async function getProjectRoadmapView(projectId: string): Promise<ProjectR
   const rows: RoadmapTaskItem[] = taskRows.map((task) => {
     const initiative = task.initiative_id ? initiativeMap.get(task.initiative_id) : null
     const assignee = task.assignee_id ? profileMap.get(task.assignee_id) : null
+    const progress = task.progress ?? 0
 
     return {
       id: task.id,
       identifier: task.identifier,
       title: task.title,
-      status: task.status,
-      progress: task.progress ?? 0,
+      progress,
+      remaining: Math.max(0, 100 - progress),
       updated_at: task.updated_at,
+      list_name: task.list_id ? (listNameById.get(task.list_id) ?? null) : null,
       initiative: initiative ? { name: initiative.name, slug: initiative.slug } : null,
       assignee_name: assignee?.display_name ?? null,
     }
   })
 
   const breakdown = buildTaskBreakdown(rows)
-  const doneTasks = rows.filter((task) => task.status === "done")
-  const openTasks = rows.filter((task) => task.status !== "done")
-  const blockedWork = rows.filter((task) => task.status === "blocked")
-  const activeWork = rows.filter((task) => ACTIVE_STATUSES.includes(task.status))
+  const listBreakdown = buildListBreakdown(taskRows, listRows)
+  const doneTasks = rows.filter((task) => isTaskComplete(task.progress))
+  const openTasks = rows.filter((task) => !isTaskComplete(task.progress))
+  const activeWork = rows.filter((task) => isTaskInProgress(task.progress))
   const unlinkedAll = rows.filter((task) => !task.initiative)
   const recentlyCompleted = doneTasks.slice(0, 10)
-  const remainingWork = openTasks
-    .filter((task) => !ACTIVE_STATUSES.includes(task.status) && task.status !== "blocked")
-    .slice(0, 12)
+  const remainingWork = openTasks.filter((task) => !isTaskInProgress(task.progress)).slice(0, 12)
 
   const averageProgress =
     rows.length > 0
@@ -168,18 +179,17 @@ export async function getProjectRoadmapView(projectId: string): Promise<ProjectR
 
   return {
     breakdown,
+    listBreakdown,
     totalTasks: rows.length,
     doneTasks: doneTasks.length,
     openTasks: openTasks.length,
-    blockedTasks: blockedWork.length,
-    inProgressTasks: rows.filter((task) => task.status === "in_progress").length,
+    inProgressTasks: activeWork.length,
     unlinkedTaskCount: unlinkedAll.length,
     averageProgress,
     completionRate,
     recentlyCompleted,
     activeWork: activeWork.slice(0, 12),
     remainingWork,
-    blockedWork: blockedWork.slice(0, 8),
     unlinkedTasks: unlinkedAll.slice(0, 12),
     initiatives: sortedInitiatives,
     githubEvents,

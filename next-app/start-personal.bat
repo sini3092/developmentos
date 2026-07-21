@@ -3,6 +3,10 @@ setlocal
 title DevelopmentOS @personal
 cd /d "%~dp0"
 
+if defined APPDATA (
+  set "PATH=%APPDATA%\npm;%PATH%"
+)
+
 if not exist ".env.bridge.local" (
   echo.
   echo  Missing .env.bridge.local

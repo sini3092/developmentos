@@ -415,15 +415,19 @@ export async function getProjectTaskStats(projectId: string) {
 
   const { data: tasks } = await supabase
     .from("tasks")
-    .select("status")
+    .select("progress")
     .eq("project_id", projectId)
     .is("deleted_at", null)
+    .neq("status", "cancelled")
 
   const total = tasks?.length ?? 0
-  const done = tasks?.filter((task) => task.status === "done").length ?? 0
-  const blocked = tasks?.filter((task) => task.status === "blocked").length ?? 0
+  const done = tasks?.filter((task) => (task.progress ?? 0) >= 100).length ?? 0
   const inProgress =
-    tasks?.filter((task) => task.status === "in_progress").length ?? 0
+    tasks?.filter((task) => {
+      const progress = task.progress ?? 0
+      return progress > 0 && progress < 100
+    }).length ?? 0
+  const blocked = 0
 
   return { total, done, blocked, inProgress }
 }

@@ -11,16 +11,13 @@ const SEGMENTS: Array<{
   className: string
   label: string
 }> = [
-  { key: "done", className: "bg-success", label: "Done" },
-  { key: "in_review", className: "bg-warning", label: "Review" },
-  { key: "in_progress", className: "bg-info", label: "Active" },
-  { key: "blocked", className: "bg-danger", label: "Blocked" },
-  { key: "ready", className: "bg-primary/60", label: "Ready" },
-  { key: "backlog", className: "bg-muted-foreground/30", label: "Backlog" },
+  { key: "done", className: "bg-success", label: "Complete" },
+  { key: "in_progress", className: "bg-info", label: "In progress" },
+  { key: "backlog", className: "bg-muted-foreground/30", label: "Not started" },
 ]
 
 export function TaskStatusBreakdown({ breakdown, className }: TaskStatusBreakdownProps) {
-  const total = Object.values(breakdown).reduce((sum, count) => sum + count, 0)
+  const total = SEGMENTS.reduce((sum, segment) => sum + (breakdown[segment.key] ?? 0), 0)
 
   if (total === 0) {
     return (
