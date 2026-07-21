@@ -27,7 +27,7 @@ export function CreateMemberForm() {
         <h3 className="text-sm font-medium">Create member account</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           Public registration is disabled. Create accounts here and share the credentials with
-          teammates.
+          teammates. They will be asked to choose a new password on first sign-in.
         </p>
       </div>
       <input type="hidden" name="workspaceId" value={activeWorkspace.id} />

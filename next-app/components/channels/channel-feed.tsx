@@ -1,7 +1,6 @@
 "use client"
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
 
 import { postChannelMessage } from "@/lib/actions/channels"
 import type { ChannelMessageNode, ChannelWithMessageTree } from "@/lib/auth/channels-context"
@@ -47,7 +46,6 @@ export function ChannelFeed({
   members,
   canEdit,
 }: ChannelFeedProps) {
-  const router = useRouter()
   const [state, formAction, pending] = useActionState(postChannelMessage, {})
   const formRef = useRef<HTMLFormElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -100,9 +98,8 @@ export function ChannelFeed({
       submitBodyRef.current = null
       formRef.current?.reset()
       void clearDraft()
-      router.refresh()
     }
-  }, [state.success, state.messageId, router, clearDraft])
+  }, [state.success, state.messageId, clearDraft])
 
   useEffect(() => {
     setOptimisticPending((current) => {
@@ -131,19 +128,6 @@ export function ChannelFeed({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [channel.messages.length, hasPendingAgents])
-
-  useEffect(() => {
-    const interval = window.setInterval(
-      () => {
-        if (document.visibilityState === "visible") {
-          router.refresh()
-        }
-      },
-      hasPendingAgents ? 2000 : 8000
-    )
-
-    return () => window.clearInterval(interval)
-  }, [router, hasPendingAgents])
 
   return (
     <div className="flex flex-1 flex-col">

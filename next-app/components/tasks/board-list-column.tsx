@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react"
 import { GripVertical, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
-import { useRouter } from "next/navigation"
 import { useDroppable } from "@dnd-kit/core"
 import {
   SortableContext,
@@ -10,12 +9,15 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { AnimatePresence, motion } from "motion/react"
 
-import { deleteBoardList, renameBoardList } from "@/lib/actions/board-lists"
+import { deleteBoardList, renameBoardList, updateBoardListColor } from "@/lib/actions/board-lists"
 import type { TaskWithPeople } from "@/lib/auth/task-context"
 import type { BoardList } from "@/lib/database.types"
-import { getBoardListColorClasses } from "@/lib/constants/board-lists"
+import {
+  BOARD_LIST_COLORS,
+  getBoardListColorClasses,
+  type BoardListColor,
+} from "@/lib/constants/board-lists"
 import { KanbanCard } from "@/components/tasks/kanban-card"
 import { Button } from "@/components/ui/button"
 import {
@@ -33,6 +35,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
@@ -46,8 +51,10 @@ type BoardListColumnProps = {
   slug: string
   canEdit: boolean
   onOpenTask: (taskId: string) => void
+  onPrefetchTask?: (taskId: string) => void
   onAddCard: (listId: string) => void
-  highlightedTaskIds?: Set<string>
+  onListDeleted?: (listId: string) => void
+  onListUpdated?: (list: BoardList) => void
 }
 
 export function BoardListColumn({
@@ -58,10 +65,11 @@ export function BoardListColumn({
   slug,
   canEdit,
   onOpenTask,
+  onPrefetchTask,
   onAddCard,
-  highlightedTaskIds,
+  onListDeleted,
+  onListUpdated,
 }: BoardListColumnProps) {
-  const router = useRouter()
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: list.id,
     data: { type: "list-drop" },
@@ -121,7 +129,16 @@ export function BoardListColumn({
       }
 
       setDeleteOpen(false)
-      router.refresh()
+      onListDeleted?.(list.id)
+    })
+  }
+
+  function changeColor(color: BoardListColor) {
+    startTransition(async () => {
+      const result = await updateBoardListColor(slug, list.id, color)
+      if (!result.error && result.list) {
+        onListUpdated?.(result.list)
+      }
     })
   }
 
@@ -191,6 +208,20 @@ export function BoardListColumn({
                   <Pencil className="size-3.5" />
                   Rename list
                 </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Change color</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {BOARD_LIST_COLORS.map((color) => {
+                      const classes = getBoardListColorClasses(color)
+                      return (
+                        <DropdownMenuItem key={color} onClick={() => changeColor(color)}>
+                          <span className={cn("size-3.5 rounded-full", classes.bar)} />
+                          <span className="capitalize">{color}</span>
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
@@ -216,26 +247,16 @@ export function BoardListColumn({
             items={tasks.map((task) => task.id)}
             strategy={verticalListSortingStrategy}
           >
-            <AnimatePresence initial={false}>
-              {tasks.map((task) => (
-                <motion.div
-                  key={task.id}
-                  layout
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 32, mass: 0.8 }}
-                >
-                  <KanbanCard
-                    task={task}
-                    listColor={list.color}
-                    onOpen={onOpenTask}
-                    canEdit={canEdit}
-                    isRemoteHighlight={highlightedTaskIds?.has(task.id) ?? false}
-                  />
-                </motion.div>
-              ))}
-            </AnimatePresence>
+            {tasks.map((task) => (
+              <KanbanCard
+                key={task.id}
+                task={task}
+                listColor={list.color}
+                onOpen={onOpenTask}
+                onPrefetch={onPrefetchTask}
+                canEdit={canEdit}
+              />
+            ))}
           </SortableContext>
 
           {tasks.length === 0 ? (

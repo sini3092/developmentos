@@ -1,7 +1,6 @@
 "use client"
 
 import { useActionState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 import { User } from "lucide-react"
 
@@ -32,7 +31,6 @@ type AccountSettingsPanelProps = {
 }
 
 export function AccountSettingsPanel({ email, profile }: AccountSettingsPanelProps) {
-  const router = useRouter()
   const [state, formAction, pending] = useActionState(updateAccountSettings, {})
   const { setTheme } = useTheme()
   const setDensity = useUiStore((state) => state.setDensity)
@@ -50,9 +48,7 @@ export function AccountSettingsPanel({ email, profile }: AccountSettingsPanelPro
       setDensity(state.density)
       document.documentElement.dataset.density = state.density
     }
-
-    router.refresh()
-  }, [state.success, state.theme, state.density, router, setDensity, setTheme])
+  }, [state.success, state.theme, state.density, setDensity, setTheme])
 
   const themePreference = profile?.theme_preference ?? "system"
   const densityPreference = profile?.density_preference ?? "comfortable"

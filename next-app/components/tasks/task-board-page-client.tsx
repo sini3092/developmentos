@@ -2,25 +2,17 @@
 
 import { KanbanBoard } from "@/components/tasks/kanban-board"
 import { TaskBoardLive } from "@/components/tasks/task-board-live"
-import type { TaskDetail, TaskListFilters, TaskWithPeople } from "@/lib/auth/task-context"
-import type {
-  BoardList,
-  Initiative,
-  Label,
-  Milestone,
-  ProjectMemberWithProfile,
-} from "@/lib/database.types"
+import type { TaskListFilters, TaskWithPeople } from "@/lib/auth/task-context"
+import type { BoardList, Label, Milestone, ProjectMemberWithProfile } from "@/lib/database.types"
 
 type TaskBoardPageClientProps = {
   slug: string
   projectId: string
   lists: BoardList[]
   initialTasks: TaskWithPeople[]
-  filters: TaskListFilters
+  initialFilters: TaskListFilters
   members: ProjectMemberWithProfile[]
-  initiatives: Pick<Initiative, "id" | "name" | "slug">[]
-  milestones: Array<Pick<Milestone, "id" | "name" | "slug" | "initiative_id">>
-  initialSelectedTask: TaskDetail | null
+  milestones: Array<Pick<Milestone, "id" | "name">>
   repoOwner?: string | null
   repoName?: string | null
   canEdit: boolean
@@ -32,11 +24,9 @@ export function TaskBoardPageClient({
   projectId,
   lists,
   initialTasks,
-  filters,
+  initialFilters,
   members,
-  initiatives,
   milestones,
-  initialSelectedTask,
   repoOwner,
   repoName,
   canEdit,
@@ -47,27 +37,40 @@ export function TaskBoardPageClient({
       slug={slug}
       projectId={projectId}
       initialTasks={initialTasks}
-      filters={filters}
+      initialFilters={initialFilters}
       members={members}
-      initiatives={initiatives}
-      milestones={milestones}
-      initialSelectedTask={initialSelectedTask}
       repoOwner={repoOwner}
       repoName={repoName}
       canEdit={canEdit}
     >
-      {({ tasks, highlightedTaskIds, onDragActiveChange }) => (
+      {({
+        tasks,
+        filters,
+        onFiltersChange,
+        onDragActiveChange,
+        onTasksChange,
+        onTaskCreated,
+        onBoardRefresh,
+        onOpenTask,
+        onPrefetchTask,
+      }) => (
         <KanbanBoard
           slug={slug}
           projectId={projectId}
-          lists={lists}
+          initialLists={lists}
           tasks={tasks}
           members={members}
           projectLabels={projectLabels}
-          milestones={milestones.map((item) => ({ id: item.id, name: item.name }))}
+          milestones={milestones}
           canEdit={canEdit}
-          highlightedTaskIds={highlightedTaskIds}
+          filters={filters}
+          onFiltersChange={onFiltersChange}
           onDragActiveChange={onDragActiveChange}
+          onTasksChange={onTasksChange}
+          onTaskCreated={onTaskCreated}
+          onBoardRefresh={onBoardRefresh}
+          onOpenTask={onOpenTask}
+          onPrefetchTask={onPrefetchTask}
         />
       )}
     </TaskBoardLive>

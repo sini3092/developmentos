@@ -130,3 +130,13 @@ export function listSortableId(listId: string) {
 export function parseListSortableId(id: string) {
   return id.startsWith("list-") ? id.slice(5) : null
 }
+
+export function flattenBoardTasks(state: KanbanBoardState): TaskWithPeople[] {
+  const result: TaskWithPeople[] = []
+
+  for (const list of state.lists) {
+    result.push(...(state.tasksByList[list.id] ?? []))
+  }
+
+  return result
+}

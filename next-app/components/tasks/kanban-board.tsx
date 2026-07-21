@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -17,7 +16,7 @@ import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable"
 
 import { reorderBoardLists } from "@/lib/actions/board-lists"
 import { moveTaskOnBoard } from "@/lib/actions/tasks"
-import type { TaskWithPeople } from "@/lib/auth/task-context"
+import type { TaskListFilters, TaskWithPeople } from "@/lib/auth/task-context"
 import type { BoardList, Label, Milestone, ProjectMemberWithProfile } from "@/lib/database.types"
 import { AddBoardList } from "@/components/tasks/add-board-list"
 import { BoardListColumn } from "@/components/tasks/board-list-column"
@@ -26,6 +25,7 @@ import { TaskFiltersBar } from "@/components/tasks/task-filters-bar"
 import {
   applyAllBoardPositions,
   findTaskListId,
+  flattenBoardTasks,
   groupTasksForBoard,
   listSortableId,
   moveTaskInBoard,
@@ -37,14 +37,20 @@ import {
 type KanbanBoardProps = {
   slug: string
   projectId: string
-  lists: BoardList[]
+  initialLists: BoardList[]
   tasks: TaskWithPeople[]
   members: ProjectMemberWithProfile[]
   projectLabels: Label[]
   milestones: Array<Pick<Milestone, "id" | "name">>
   canEdit: boolean
-  highlightedTaskIds?: Set<string>
+  filters: TaskListFilters
+  onFiltersChange: (filters: TaskListFilters) => void
   onDragActiveChange?: (active: boolean) => void
+  onTasksChange?: (tasks: TaskWithPeople[]) => void
+  onTaskCreated?: (taskId: string) => void
+  onBoardRefresh?: () => Promise<void>
+  onOpenTask: (taskId: string) => void
+  onPrefetchTask?: (taskId: string) => void
 }
 
 type ActiveDrag =
@@ -55,18 +61,25 @@ type ActiveDrag =
 export function KanbanBoard({
   slug,
   projectId,
-  lists,
+  initialLists,
   tasks,
   members,
   projectLabels,
   milestones,
   canEdit,
-  highlightedTaskIds,
+  filters,
+  onFiltersChange,
   onDragActiveChange,
+  onTasksChange,
+  onTaskCreated,
+  onBoardRefresh,
+  onOpenTask,
+  onPrefetchTask,
 }: KanbanBoardProps) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [board, setBoard] = useState<KanbanBoardState>(() => groupTasksForBoard(lists, tasks))
+  const skipTasksSyncRef = useRef(false)
+  const [board, setBoard] = useState<KanbanBoardState>(() =>
+    groupTasksForBoard(initialLists, tasks)
+  )
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null)
   const [createListId, setCreateListId] = useState<string | null>(null)
 
@@ -77,8 +90,15 @@ export function KanbanBoard({
   )
 
   useEffect(() => {
-    setBoard(groupTasksForBoard(lists, tasks))
-  }, [lists, tasks])
+    if (skipTasksSyncRef.current) {
+      skipTasksSyncRef.current = false
+      return
+    }
+    setBoard((current) => ({
+      lists: current.lists,
+      tasksByList: groupTasksForBoard(current.lists, tasks).tasksByList,
+    }))
+  }, [tasks])
 
   const listSortableIds = useMemo(
     () => board.lists.map((list) => listSortableId(list.id)),
@@ -94,10 +114,14 @@ export function KanbanBoard({
     return null
   }, [activeDrag, board])
 
-  function openTask(taskId: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set("task", taskId)
-    router.push(`/projects/${slug}/tasks/board?${params.toString()}`)
+  function commitTasks(next: KanbanBoardState) {
+    skipTasksSyncRef.current = true
+    setBoard(next)
+    onTasksChange?.(flattenBoardTasks(next))
+  }
+
+  function commitLists(nextLists: BoardList[]) {
+    setBoard((current) => ({ ...current, lists: nextLists }))
   }
 
   function resolveTaskTarget(
@@ -135,16 +159,31 @@ export function KanbanBoard({
   }
 
   function handleDragOver(event: DragOverEvent) {
-    if (!canEdit || activeDrag?.type !== "task") return
+    if (!canEdit) return
 
     const { active, over } = event
     if (!over) return
 
     const activeId = String(active.id)
     const overId = String(over.id)
+
+    if (activeDrag?.type === "list") {
+      const activeListId = parseListSortableId(activeId)
+      const overListId = parseListSortableId(overId)
+      if (!activeListId || !overListId || activeListId === overListId) return
+
+      setBoard((current) => {
+        const reordered = reorderBoardListItems(current.lists, activeListId, overListId)
+        if (reordered === current.lists) return current
+        return { ...current, lists: reordered }
+      })
+      return
+    }
+
+    if (activeDrag?.type !== "task") return
+
     const fromListId = findTaskListId(board, activeId)
     const target = resolveTaskTarget(overId, board)
-
     if (!fromListId || !target) return
 
     if (fromListId === target.listId) {
@@ -155,7 +194,7 @@ export function KanbanBoard({
     setBoard((current) => moveTaskInBoard(current, activeId, target.listId, target.index))
   }
 
-  async function handleDragEnd(event: DragEndEvent) {
+  function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     const currentDrag = activeDrag
     setActiveDrag(null)
@@ -167,17 +206,13 @@ export function KanbanBoard({
     const overId = String(over.id)
 
     if (currentDrag?.type === "list") {
-      const activeListId = parseListSortableId(activeId)
-      const overListId = parseListSortableId(overId) ?? overId
-      if (!activeListId) return
-
-      const reordered = reorderBoardListItems(board.lists, activeListId, overListId)
-      setBoard((current) => ({ ...current, lists: reordered }))
-      await reorderBoardLists(
-        slug,
-        reordered.map((list) => list.id)
-      )
-      router.refresh()
+      setBoard((current) => {
+        void reorderBoardLists(
+          slug,
+          current.lists.map((list) => list.id)
+        )
+        return current
+      })
       return
     }
 
@@ -187,24 +222,12 @@ export function KanbanBoard({
     const next = applyAllBoardPositions(
       moveTaskInBoard(board, activeId, target.listId, target.index)
     )
-    setBoard(next)
+    commitTasks(next)
 
     const movedTask = next.tasksByList[target.listId]?.find((task) => task.id === activeId)
     if (!movedTask) return
 
-    const result = await moveTaskOnBoard(
-      slug,
-      activeId,
-      target.listId,
-      movedTask.board_position
-    )
-
-    if (result?.error) {
-      setBoard(groupTasksForBoard(lists, tasks))
-      return
-    }
-
-    router.refresh()
+    void moveTaskOnBoard(slug, activeId, target.listId, movedTask.board_position)
   }
 
   return (
@@ -219,9 +242,13 @@ export function KanbanBoard({
         canEdit={canEdit}
         basePath="/tasks/board"
         defaultListId={createListId}
+        clientMode
+        filters={filters}
+        onFiltersChange={onFiltersChange}
         onCreateOpenChange={(open) => {
           if (!open) setCreateListId(null)
         }}
+        onTaskCreated={onTaskCreated}
       />
 
       <DndContext
@@ -245,32 +272,67 @@ export function KanbanBoard({
               </p>
               {canEdit ? (
                 <div className="mx-auto mt-6 max-w-sm">
-                  <AddBoardList slug={slug} projectId={projectId} canEdit={canEdit} inline />
+                  <AddBoardList
+                    slug={slug}
+                    projectId={projectId}
+                    canEdit={canEdit}
+                    inline
+                    onListCreated={(list) => {
+                      commitLists([...board.lists, list])
+                      setBoard((current) => ({
+                        ...current,
+                        tasksByList: { ...current.tasksByList, [list.id]: [] },
+                      }))
+                    }}
+                  />
                 </div>
               ) : null}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {board.lists.map((list) => (
-              <BoardListColumn
-                key={list.id}
-                list={list}
-                tasks={board.tasksByList[list.id] ?? []}
-                allLists={board.lists}
-                projectId={projectId}
+              {board.lists.map((list) => (
+                <BoardListColumn
+                  key={list.id}
+                  list={list}
+                  tasks={board.tasksByList[list.id] ?? []}
+                  allLists={board.lists}
+                  projectId={projectId}
+                  slug={slug}
+                  canEdit={canEdit}
+                  onOpenTask={onOpenTask}
+                  onPrefetchTask={onPrefetchTask}
+                  onAddCard={(listId) => {
+                    setCreateListId(listId)
+                    const trigger = document.getElementById("board-create-task-trigger")
+                    trigger?.click()
+                  }}
+                  onListDeleted={async (listId) => {
+                    const nextLists = board.lists.filter((item) => item.id !== listId)
+                    const nextTasksByList = { ...board.tasksByList }
+                    delete nextTasksByList[listId]
+                    setBoard({ lists: nextLists, tasksByList: nextTasksByList })
+                    await onBoardRefresh?.()
+                  }}
+                  onListUpdated={(updatedList) => {
+                    commitLists(
+                      board.lists.map((item) => (item.id === updatedList.id ? updatedList : item))
+                    )
+                  }}
+                />
+              ))}
+              <AddBoardList
                 slug={slug}
+                projectId={projectId}
                 canEdit={canEdit}
-                onOpenTask={openTask}
-                onAddCard={(listId) => {
-                  setCreateListId(listId)
-                  const trigger = document.getElementById("board-create-task-trigger")
-                  trigger?.click()
+                onListCreated={(list) => {
+                  commitLists([...board.lists, list])
+                  setBoard((current) => ({
+                    ...current,
+                    tasksByList: { ...current.tasksByList, [list.id]: [] },
+                  }))
                 }}
-                highlightedTaskIds={highlightedTaskIds}
               />
-            ))}
-            <AddBoardList slug={slug} projectId={projectId} canEdit={canEdit} />
-          </div>
+            </div>
           )}
         </SortableContext>
 

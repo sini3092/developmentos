@@ -55,9 +55,7 @@ export async function createTask(
 
   await runTaskAutomationsForCreate(data.id)
 
-  revalidatePath(`/projects/${slug}`)
   revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: "Task created.", taskId: data.id }
 }
 
@@ -109,9 +107,6 @@ export async function updateTask(
   }
 
   revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
-  revalidatePath("/")
-  revalidatePath("/my-work")
   return { success: "Task updated." }
 }
 
@@ -136,9 +131,22 @@ export async function moveTaskOnBoard(
     await runTaskAutomationsForUpdate(taskId, previous)
   }
 
-  revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: true }
+}
+
+export async function updateTaskProgress(slug: string, taskId: string, progress: number) {
+  const clamped = Math.min(100, Math.max(0, Math.round(progress)))
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("tasks")
+    .update({ progress: clamped, updated_at: new Date().toISOString() })
+    .eq("id", taskId)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  return { success: true, progress: clamped }
 }
 
 export async function updateTaskStatus(
@@ -194,8 +202,6 @@ export async function addTaskComment(
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: "Comment added." }
 }
 
@@ -210,8 +216,6 @@ export async function archiveTask(taskId: string, slug: string) {
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: true }
 }
 
@@ -383,8 +387,6 @@ export async function toggleTaskLabel(
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: true }
 }
 
@@ -420,8 +422,6 @@ export async function addChecklistItem(
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: "Checklist item added." }
 }
 
@@ -448,8 +448,6 @@ export async function toggleChecklistItem(
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: true }
 }
 
@@ -464,7 +462,29 @@ export async function deleteChecklistItem(itemId: string, slug: string) {
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks`)
-  revalidatePath(`/projects/${slug}/tasks/board`)
+  return { success: true }
+}
+
+export async function reorderChecklistItems(
+  slug: string,
+  taskId: string,
+  itemIds: string[]
+) {
+  const supabase = await createClient()
+
+  const updates = itemIds.map((id, index) =>
+    supabase
+      .from("task_checklist_items")
+      .update({ position: (index + 1) * 1000 })
+      .eq("id", id)
+      .eq("task_id", taskId)
+  )
+
+  const results = await Promise.all(updates)
+  const failed = results.find((result) => result.error)
+  if (failed?.error) {
+    return { error: failed.error.message }
+  }
+
   return { success: true }
 }

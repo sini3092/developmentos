@@ -1,7 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
-
 import { createClient } from "@/lib/supabase/server"
 import { BOARD_LIST_COLORS } from "@/lib/constants/board-lists"
 
@@ -23,19 +21,22 @@ export async function createBoardList(slug: string, projectId: string, name: str
 
   const color = BOARD_LIST_COLORS[Math.floor(Math.random() * BOARD_LIST_COLORS.length)]
 
-  const { error } = await supabase.from("board_lists").insert({
-    project_id: projectId,
-    name: trimmed,
-    color,
-    position: (last?.position ?? 0) + 1000,
-  })
+  const { data, error } = await supabase
+    .from("board_lists")
+    .insert({
+      project_id: projectId,
+      name: trimmed,
+      color,
+      position: (last?.position ?? 0) + 1000,
+    })
+    .select()
+    .single()
 
   if (error) {
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks/board`)
-  return { success: true }
+  return { success: true, list: data }
 }
 
 export async function renameBoardList(slug: string, listId: string, name: string) {
@@ -54,7 +55,6 @@ export async function renameBoardList(slug: string, listId: string, name: string
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: true }
 }
 
@@ -74,8 +74,23 @@ export async function reorderBoardLists(slug: string, listIds: string[]) {
     return { error: failed.error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks/board`)
   return { success: true }
+}
+
+export async function updateBoardListColor(slug: string, listId: string, color: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("board_lists")
+    .update({ color, updated_at: new Date().toISOString() })
+    .eq("id", listId)
+    .select()
+    .single()
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  return { success: true, list: data }
 }
 
 export async function deleteBoardList(
@@ -150,7 +165,5 @@ export async function deleteBoardList(
     return { error: error.message }
   }
 
-  revalidatePath(`/projects/${slug}/tasks/board`)
-  revalidatePath(`/projects/${slug}/roadmap`)
   return { success: true }
 }

@@ -63,7 +63,7 @@ export function useProjectTasksLive({
         window.clearTimeout(timerRef.current)
       }
 
-      timerRef.current = window.setTimeout(flush, 120)
+      timerRef.current = window.setTimeout(flush, 500)
     }
 
     const channel = supabase
@@ -79,24 +79,6 @@ export function useProjectTasksLive({
         (payload) => {
           const record = payload.eventType === "DELETE" ? payload.old : payload.new
           const taskId = String((record as { id?: string }).id ?? "")
-          schedule(taskId || null)
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "task_comments" },
-        (payload) => {
-          const record = payload.eventType === "DELETE" ? payload.old : payload.new
-          const taskId = String((record as { task_id?: string }).task_id ?? "")
-          schedule(taskId || null)
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "task_checklist_items" },
-        (payload) => {
-          const record = payload.eventType === "DELETE" ? payload.old : payload.new
-          const taskId = String((record as { task_id?: string }).task_id ?? "")
           schedule(taskId || null)
         }
       )

@@ -1,8 +1,11 @@
 "use client"
 
+import { Suspense } from "react"
+
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { AppTopbar } from "@/components/layout/app-topbar"
 import { CommandPalette } from "@/components/layout/command-palette"
+import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { useIsPwa } from "@/hooks/use-pwa"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 
@@ -11,6 +14,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen={!isPwa} className="min-w-0 overflow-x-hidden">
+      <Suspense fallback={null}>
+        <NavigationProgress />
+      </Suspense>
       <AppSidebar />
       <SidebarInset className="min-w-0 bg-background">
         <AppTopbar />

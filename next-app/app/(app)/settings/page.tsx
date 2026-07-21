@@ -2,6 +2,7 @@ import { Settings } from "lucide-react"
 
 import { PageHeader } from "@/components/layout/page-header"
 import { AccountSettingsPanel } from "@/components/settings/account-settings-panel"
+import { PasswordSettingsPanel } from "@/components/settings/password-settings-panel"
 import { GithubIntegrationPanel } from "@/components/settings/github-integration-panel"
 import { PushNotificationsPanel } from "@/components/settings/push-notifications-panel"
 import { WorkspaceSettingsPanel } from "@/components/settings/workspace-settings-panel"
@@ -64,6 +65,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       />
       <div className="grid gap-4 p-6 lg:grid-cols-2">
         <AccountSettingsPanel email={user.email} profile={profile} />
+        <PasswordSettingsPanel />
         {activeWorkspace ? (
           <WorkspaceSettingsPanel
             workspace={activeWorkspace}

@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
 
 import { createBoardList } from "@/lib/actions/board-lists"
+import type { BoardList } from "@/lib/database.types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -12,10 +12,16 @@ type AddBoardListProps = {
   projectId: string
   canEdit: boolean
   inline?: boolean
+  onListCreated?: (list: BoardList) => void
 }
 
-export function AddBoardList({ slug, projectId, canEdit, inline = false }: AddBoardListProps) {
-  const router = useRouter()
+export function AddBoardList({
+  slug,
+  projectId,
+  canEdit,
+  inline = false,
+  onListCreated,
+}: AddBoardListProps) {
   const [open, setOpen] = useState(inline)
   const [name, setName] = useState("")
   const [pending, startTransition] = useTransition()
@@ -30,10 +36,10 @@ export function AddBoardList({ slug, projectId, canEdit, inline = false }: AddBo
 
     startTransition(async () => {
       const result = await createBoardList(slug, projectId, trimmed)
-      if (!result.error) {
+      if (!result.error && result.list) {
         setName("")
         setOpen(inline)
-        router.refresh()
+        onListCreated?.(result.list)
       }
     })
   }

@@ -1,140 +1,285 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useSearchParams } from "next/navigation"
 
 import type { TaskDetail, TaskListFilters, TaskWithPeople } from "@/lib/auth/task-context"
-import type {
-  Initiative,
-  Milestone,
-  ProjectMemberWithProfile,
-} from "@/lib/database.types"
+import type { ProjectMemberWithProfile } from "@/lib/database.types"
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet"
 import { useProjectTasksLive } from "@/hooks/use-project-tasks-live"
 import { queryBoardTasks } from "@/lib/tasks/query-board-tasks"
+import { fetchTaskDetailClient } from "@/lib/tasks/fetch-task-detail-client"
+import { filterTasksClient } from "@/lib/utils/filter-tasks-client"
 import { createClient } from "@/lib/supabase/client"
 
 type TaskBoardLiveProps = {
   slug: string
   projectId: string
   initialTasks: TaskWithPeople[]
-  filters: TaskListFilters
+  initialFilters: TaskListFilters
   members: ProjectMemberWithProfile[]
-  initiatives: Pick<Initiative, "id" | "name" | "slug">[]
-  milestones: Array<Pick<Milestone, "id" | "name" | "slug" | "initiative_id">>
-  initialSelectedTask: TaskDetail | null
   repoOwner?: string | null
   repoName?: string | null
   canEdit: boolean
   children: (props: {
     tasks: TaskWithPeople[]
-    highlightedTaskIds: Set<string>
+    filters: TaskListFilters
+    onFiltersChange: (filters: TaskListFilters) => void
     onDragActiveChange: (active: boolean) => void
+    onTasksChange: (tasks: TaskWithPeople[]) => void
+    onTaskCreated: (taskId: string) => void
+    onBoardRefresh: () => Promise<void>
+    onOpenTask: (taskId: string) => void
+    onPrefetchTask: (taskId: string) => void
   }) => ReactNode
+}
+
+function toTaskShell(task: TaskWithPeople): TaskDetail {
+  return {
+    ...task,
+    comments: [],
+    initiative: null,
+    milestone: null,
+    checklist_items: [],
+    pull_requests: [],
+    branches: [],
+    attachments: [],
+    linked_assets: [],
+    linked_decisions: [],
+    linked_design_documents: [],
+    linked_lore_entries: [],
+    blocked_by: [],
+    blocks: [],
+  }
 }
 
 export function TaskBoardLive({
   slug,
   projectId,
   initialTasks,
-  filters,
+  initialFilters,
   members,
-  initiatives,
-  milestones,
-  initialSelectedTask,
   repoOwner,
   repoName,
   canEdit,
   children,
 }: TaskBoardLiveProps) {
-  const [tasks, setTasks] = useState(initialTasks)
-  const [selectedTask, setSelectedTask] = useState(initialSelectedTask)
-  const [highlightedTaskIds, setHighlightedTaskIds] = useState<Set<string>>(new Set())
-  const [newCommentIds, setNewCommentIds] = useState<Set<string>>(new Set())
-  const [newChecklistIds, setNewChecklistIds] = useState<Set<string>>(new Set())
+  const searchParams = useSearchParams()
+  const [allTasks, setAllTasks] = useState(initialTasks)
+  const [filters, setFilters] = useState(initialFilters)
+  const [selectedTask, setSelectedTask] = useState<TaskDetail | null>(null)
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false)
   const isDraggingRef = useRef(false)
-  const selectedTaskIdRef = useRef(initialSelectedTask?.id ?? null)
-  const previousCommentIdsRef = useRef(new Set(initialSelectedTask?.comments.map((c) => c.id) ?? []))
-  const previousChecklistIdsRef = useRef(
-    new Set(initialSelectedTask?.checklist_items.map((item) => item.id) ?? [])
-  )
+  const skipTasksSyncRef = useRef(false)
+  const selectedTaskIdRef = useRef<string | null>(null)
+  const taskCacheRef = useRef(new Map<string, TaskDetail>())
+  const prefetchingRef = useRef(new Set<string>())
+  const openedFromUrlRef = useRef(false)
+
+  const visibleTasks = useMemo(() => filterTasksClient(allTasks, filters), [allTasks, filters])
 
   useEffect(() => {
-    setTasks(initialTasks)
+    if (skipTasksSyncRef.current) {
+      skipTasksSyncRef.current = false
+      return
+    }
+    if (isDraggingRef.current) return
+    setAllTasks(initialTasks)
   }, [initialTasks])
 
   useEffect(() => {
-    setSelectedTask(initialSelectedTask)
-    selectedTaskIdRef.current = initialSelectedTask?.id ?? null
-    previousCommentIdsRef.current = new Set(initialSelectedTask?.comments.map((c) => c.id) ?? [])
-    previousChecklistIdsRef.current = new Set(
-      initialSelectedTask?.checklist_items.map((item) => item.id) ?? []
-    )
-    setNewCommentIds(new Set())
-    setNewChecklistIds(new Set())
-  }, [initialSelectedTask])
+    const params = new URLSearchParams()
+    if (filters.listId && filters.listId !== "all") params.set("list", filters.listId)
+    if (filters.assigneeId && filters.assigneeId !== "all") {
+      params.set("assignee", filters.assigneeId)
+    }
+    if (filters.search?.trim()) params.set("q", filters.search.trim())
+    if (filters.priority && filters.priority !== "all") params.set("priority", filters.priority)
+    if (filters.discipline && filters.discipline !== "all") {
+      params.set("discipline", filters.discipline)
+    }
+    if (filters.labelId && filters.labelId !== "all") params.set("label", filters.labelId)
+    if (filters.milestoneId && filters.milestoneId !== "all") {
+      params.set("milestone", filters.milestoneId)
+    }
 
-  const markHighlighted = useCallback((taskId: string | null) => {
-    if (!taskId) return
-    setHighlightedTaskIds((current) => new Set(current).add(taskId))
-    window.setTimeout(() => {
-      setHighlightedTaskIds((current) => {
-        const next = new Set(current)
-        next.delete(taskId)
-        return next
-      })
-    }, 1600)
-  }, [])
+    const taskId = new URLSearchParams(window.location.search).get("task")
+    if (taskId) params.set("task", taskId)
+
+    const query = params.toString()
+    const nextUrl = query
+      ? `/projects/${slug}/tasks/board?${query}`
+      : `/projects/${slug}/tasks/board`
+    window.history.replaceState(null, "", nextUrl)
+  }, [filters, slug])
+
+  const loadTaskDetail = useCallback(
+    async (taskId: string) => {
+      const cached = taskCacheRef.current.get(taskId)
+      if (cached) return cached
+
+      const supabase = createClient()
+      const nextTask = await fetchTaskDetailClient(supabase, projectId, taskId)
+      if (nextTask) {
+        taskCacheRef.current.set(taskId, nextTask)
+      }
+      return nextTask
+    },
+    [projectId]
+  )
 
   const refreshBoard = useCallback(async () => {
     const supabase = createClient()
-    const nextTasks = await queryBoardTasks(supabase, projectId, filters)
-    setTasks(nextTasks)
-  }, [filters, projectId])
+    const nextTasks = await queryBoardTasks(supabase, projectId)
+    skipTasksSyncRef.current = true
+    setAllTasks(nextTasks)
+  }, [projectId])
 
   const refreshSelectedTask = useCallback(async () => {
     const taskId = selectedTaskIdRef.current
     if (!taskId) return
 
-    const response = await fetch(`/api/projects/${slug}/tasks/${taskId}`)
-    if (!response.ok) return
-
-    const nextTask = (await response.json()) as TaskDetail
-
-    const nextCommentIds = new Set(nextTask.comments.map((comment) => comment.id))
-    const addedComments = [...nextCommentIds].filter(
-      (id) => !previousCommentIdsRef.current.has(id)
-    )
-    if (addedComments.length > 0) {
-      setNewCommentIds(new Set(addedComments))
-      window.setTimeout(() => setNewCommentIds(new Set()), 1600)
-    }
-    previousCommentIdsRef.current = nextCommentIds
-
-    const nextChecklistIds = new Set(nextTask.checklist_items.map((item) => item.id))
-    const addedChecklist = [...nextChecklistIds].filter(
-      (id) => !previousChecklistIdsRef.current.has(id)
-    )
-    if (addedChecklist.length > 0) {
-      setNewChecklistIds(new Set(addedChecklist))
-      window.setTimeout(() => setNewChecklistIds(new Set()), 1600)
-    }
-    previousChecklistIdsRef.current = nextChecklistIds
+    taskCacheRef.current.delete(taskId)
+    const nextTask = await loadTaskDetail(taskId)
+    if (!nextTask) return
 
     setSelectedTask(nextTask)
-  }, [slug])
+
+    setAllTasks((current) =>
+      current.map((task) =>
+        task.id === nextTask.id
+          ? {
+              ...task,
+              title: nextTask.title,
+              description: nextTask.description,
+              progress: nextTask.progress,
+              comment_count: nextTask.comments.length,
+              checklist_total: nextTask.checklist_items.length,
+              checklist_done: nextTask.checklist_items.filter((item) => item.completed).length,
+              checklist_preview: nextTask.checklist_items.slice(0, 3).map((item) => ({
+                id: item.id,
+                title: item.title,
+                completed: item.completed,
+              })),
+            }
+          : task
+      )
+    )
+  }, [loadTaskDetail])
+
+  const openTask = useCallback(
+    (taskId: string) => {
+      selectedTaskIdRef.current = taskId
+
+      const url = new URL(window.location.href)
+      url.searchParams.set("task", taskId)
+      window.history.replaceState(null, "", url.toString())
+
+      const cached = taskCacheRef.current.get(taskId)
+      if (cached) {
+        setSelectedTask(cached)
+        setIsLoadingDetail(false)
+        return
+      }
+
+      const fromBoard = allTasks.find((task) => task.id === taskId)
+      setSelectedTask(
+        fromBoard
+          ? toTaskShell(fromBoard)
+          : ({
+              id: taskId,
+              title: "Loading…",
+              identifier: "…",
+              project_id: projectId,
+              comments: [],
+              checklist_items: [],
+              pull_requests: [],
+              branches: [],
+              attachments: [],
+              linked_assets: [],
+              linked_decisions: [],
+              linked_design_documents: [],
+              linked_lore_entries: [],
+              blocked_by: [],
+              blocks: [],
+              labels: [],
+              initiative: null,
+              milestone: null,
+              progress: 0,
+            } as TaskDetail)
+      )
+      setIsLoadingDetail(true)
+
+      void loadTaskDetail(taskId).then((nextTask) => {
+        if (!nextTask || selectedTaskIdRef.current !== taskId) return
+        setSelectedTask(nextTask)
+        setIsLoadingDetail(false)
+      })
+    },
+    [allTasks, loadTaskDetail]
+  )
+
+  const prefetchTask = useCallback(
+    (taskId: string) => {
+      if (taskCacheRef.current.has(taskId) || prefetchingRef.current.has(taskId)) return
+      prefetchingRef.current.add(taskId)
+      void loadTaskDetail(taskId).finally(() => {
+        prefetchingRef.current.delete(taskId)
+      })
+    },
+    [loadTaskDetail]
+  )
+
+  useEffect(() => {
+    if (openedFromUrlRef.current) return
+    const taskId = searchParams.get("task")
+    if (!taskId) return
+    openedFromUrlRef.current = true
+    openTask(taskId)
+  }, [openTask, searchParams])
+
+  const closeTask = useCallback(() => {
+    selectedTaskIdRef.current = null
+    setSelectedTask(null)
+    setIsLoadingDetail(false)
+
+    const url = new URL(window.location.href)
+    url.searchParams.delete("task")
+    window.history.replaceState(null, "", url.pathname + url.search)
+  }, [])
 
   const handleRemoteChange = useCallback(
     async (taskId: string | null) => {
-      await refreshBoard()
-      if (taskId) {
-        markHighlighted(taskId)
-      }
+      if (isDraggingRef.current) return
       if (taskId && taskId === selectedTaskIdRef.current) {
         await refreshSelectedTask()
       }
     },
-    [markHighlighted, refreshBoard, refreshSelectedTask]
+    [refreshSelectedTask]
   )
+
+  const handleTasksChange = useCallback((nextVisibleTasks: TaskWithPeople[]) => {
+    skipTasksSyncRef.current = true
+    setAllTasks((current) => {
+      const nextById = new Map(current.map((task) => [task.id, task]))
+      for (const task of nextVisibleTasks) {
+        nextById.set(task.id, task)
+      }
+      return Array.from(nextById.values())
+    })
+  }, [])
+
+  const handleTaskCreated = useCallback(
+    (taskId: string) => {
+      void refreshBoard()
+      openTask(taskId)
+    },
+    [openTask, refreshBoard]
+  )
+
+  const handleTaskActivity = useCallback(() => {
+    void refreshSelectedTask()
+  }, [refreshSelectedTask])
 
   const { flushPending } = useProjectTasksLive({
     projectId,
@@ -145,8 +290,9 @@ export function TaskBoardLive({
   return (
     <>
       {children({
-        tasks,
-        highlightedTaskIds,
+        tasks: visibleTasks,
+        filters,
+        onFiltersChange: setFilters,
         onDragActiveChange: (active) => {
           const wasDragging = isDraggingRef.current
           isDraggingRef.current = active
@@ -154,18 +300,22 @@ export function TaskBoardLive({
             flushPending()
           }
         },
+        onTasksChange: handleTasksChange,
+        onTaskCreated: handleTaskCreated,
+        onBoardRefresh: refreshBoard,
+        onOpenTask: openTask,
+        onPrefetchTask: prefetchTask,
       })}
       <TaskDetailSheet
         task={selectedTask}
         slug={slug}
         members={members}
-        initiatives={initiatives}
-        milestones={milestones}
         repoOwner={repoOwner}
         repoName={repoName}
         canEdit={canEdit}
-        highlightedCommentIds={newCommentIds}
-        highlightedChecklistIds={newChecklistIds}
+        isLoading={isLoadingDetail}
+        onClose={closeTask}
+        onActivity={handleTaskActivity}
       />
     </>
   )

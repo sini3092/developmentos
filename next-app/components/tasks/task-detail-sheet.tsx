@@ -1,9 +1,6 @@
 "use client"
 
-import Link from "next/link"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react"
-import { motion } from "motion/react"
+import { useActionState, useEffect, useState, useTransition } from "react"
 import { MessageSquare } from "lucide-react"
 
 import { TaskChecklistSection } from "@/components/tasks/task-checklist-section"
@@ -12,21 +9,10 @@ import {
   addTaskComment,
   archiveTask,
   updateTask,
-  updateTaskStatus,
+  updateTaskProgress,
 } from "@/lib/actions/tasks"
 import type { TaskDetail } from "@/lib/auth/task-context"
-import type {
-  Initiative,
-  Milestone,
-  ProjectMemberWithProfile,
-} from "@/lib/database.types"
-import {
-  TASK_PRIORITIES,
-  TASK_PRIORITY_LABELS,
-  TASK_STATUSES,
-  TASK_STATUS_LABELS,
-} from "@/lib/constants/tasks"
-import { TaskPriorityBadge, TaskStatusBadge } from "@/components/tasks/task-badges"
+import type { ProjectMemberWithProfile } from "@/lib/database.types"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -41,49 +27,43 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useDraftComposer } from "@/hooks/use-draft-composer"
 import { getInitials } from "@/lib/utils/format"
-import { cn } from "@/lib/utils"
+
+const INSTANT_DIALOG =
+  "!duration-0 data-open:animate-none data-closed:animate-none data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95"
 
 type TaskDetailSheetProps = {
   task: TaskDetail | null
   slug: string
   members: ProjectMemberWithProfile[]
-  initiatives: Pick<Initiative, "id" | "name" | "slug">[]
-  milestones: Array<Pick<Milestone, "id" | "name" | "slug" | "initiative_id">>
   repoOwner?: string | null
   repoName?: string | null
   canEdit: boolean
-  highlightedCommentIds?: Set<string>
-  highlightedChecklistIds?: Set<string>
+  isLoading?: boolean
+  onClose: () => void
+  onActivity?: () => void
 }
 
 export function TaskDetailSheet({
   task,
   slug,
   members,
-  initiatives,
-  milestones,
   repoOwner,
   repoName,
   canEdit,
-  highlightedCommentIds,
-  highlightedChecklistIds,
+  isLoading = false,
+  onClose,
+  onActivity,
 }: TaskDetailSheetProps) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
   const open = Boolean(task)
   const [updateState, updateAction, updatePending] = useActionState(updateTask, {})
   const [commentState, commentAction, commentPending] = useActionState(addTaskComment, {})
   const [isArchiving, startArchive] = useTransition()
-  const [selectedInitiativeId, setSelectedInitiativeId] = useState("")
+  const [progressValue, setProgressValue] = useState(task?.progress ?? 0)
 
-  const commentMetadata = useMemo(
-    () => ({
-      taskId: task?.id ?? "",
-      slug,
-    }),
-    [slug, task?.id]
-  )
+  const commentMetadata = {
+    taskId: task?.id ?? "",
+    slug,
+  }
 
   const commentDraft = useDraftComposer({
     kind: "task_comment",
@@ -97,26 +77,25 @@ export function TaskDetailSheet({
   useEffect(() => {
     if (commentState.success) {
       void clearCommentDraft()
+      onActivity?.()
     }
-  }, [commentState.success, clearCommentDraft])
+  }, [commentState.success, clearCommentDraft, onActivity])
 
   useEffect(() => {
-    setSelectedInitiativeId(task?.initiative_id ?? "")
-  }, [task?.id, task?.initiative_id])
+    if (updateState.success) {
+      onActivity?.()
+    }
+  }, [updateState.success, onActivity])
 
-  const filteredMilestones = milestones.filter(
-    (milestone) =>
-      !selectedInitiativeId || milestone.initiative_id === selectedInitiativeId
-  )
+  useEffect(() => {
+    setProgressValue(task?.progress ?? 0)
+  }, [task?.id, task?.progress])
 
-  function closeDialog() {
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete("task")
-    const query = params.toString()
-    const basePath = pathname.includes("/tasks/board")
-      ? `/projects/${slug}/tasks/board`
-      : `/projects/${slug}/tasks`
-    router.push(query ? `${basePath}?${query}` : basePath)
+  function saveProgress(value: number) {
+    if (!task) return
+    void updateTaskProgress(slug, task.id, value).then((result) => {
+      if (!result.error) onActivity?.()
+    })
   }
 
   if (!task) {
@@ -124,18 +103,19 @@ export function TaskDetailSheet({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && closeDialog()}>
-      <DialogContent className="!flex h-[min(88dvh,56rem)] max-h-[min(88dvh,56rem)] w-[calc(100%-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent
+        className={`${INSTANT_DIALOG} !flex h-[min(88dvh,56rem)] max-h-[min(88dvh,56rem)] w-[calc(100%-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl`}
+      >
         <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left">
+          {isLoading ? (
+            <div className="mb-2 h-0.5 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full w-1/3 animate-[navigation-progress_0.9s_ease-in-out_infinite] bg-primary" />
+            </div>
+          ) : null}
           <div className="flex items-center gap-2 pr-8">
-            <span className="font-mono text-xs text-muted-foreground">
-              {task.identifier}
-            </span>
-            <TaskStatusBadge status={task.status} />
-            <TaskPriorityBadge priority={task.priority} />
-            <span className="ml-auto text-xs text-muted-foreground">
-              {task.progress}% complete
-            </span>
+            <span className="font-mono text-xs text-muted-foreground">{task.identifier}</span>
+            <span className="ml-auto text-xs text-muted-foreground">{progressValue}%</span>
           </div>
           <DialogTitle className="text-left text-lg">{task.title}</DialogTitle>
           <DialogDescription className="text-left">
@@ -145,16 +125,62 @@ export function TaskDetailSheet({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-6 py-5">
+          {isLoading ? (
+            <div className="space-y-4">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div className="h-full w-1/3 animate-[navigation-progress_0.9s_ease-in-out_infinite] rounded-full bg-primary" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                <div className="h-9 w-full animate-pulse rounded bg-muted" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                <div className="h-24 w-full animate-pulse rounded bg-muted" />
+              </div>
+            </div>
+          ) : null}
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="task-progress">Progress</Label>
+              <span className="text-xs font-medium text-muted-foreground">{progressValue}%</span>
+            </div>
+            {canEdit ? (
+              <input
+                id="task-progress"
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={progressValue}
+                onChange={(event) => setProgressValue(Number(event.target.value))}
+                onPointerUp={(event) => saveProgress(Number(event.currentTarget.value))}
+                className="w-full accent-primary"
+              />
+            ) : null}
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${progressValue}%` }}
+              />
+            </div>
+          </section>
+
           {canEdit ? (
             <form id="task-edit-form" action={updateAction} className="space-y-4">
               <input type="hidden" name="taskId" value={task.id} />
               <input type="hidden" name="slug" value={slug} />
-              <input type="hidden" name="progress" value={String(task.progress)} />
+              <input type="hidden" name="progress" value={String(progressValue)} />
+              <input type="hidden" name="status" value={task.status} />
+              <input type="hidden" name="priority" value={task.priority} />
+              <input type="hidden" name="assigneeId" value={task.assignee_id ?? ""} />
+              <input type="hidden" name="discipline" value={task.discipline ?? ""} />
+              <input type="hidden" name="dueDate" value={task.due_date ?? ""} />
+              <input type="hidden" name="initiativeId" value={task.initiative_id ?? ""} />
+              <input type="hidden" name="milestoneId" value={task.milestone_id ?? ""} />
               {updateState.error ? (
                 <p className="text-sm text-danger">{updateState.error}</p>
-              ) : null}
-              {updateState.success ? (
-                <p className="text-sm text-success">{updateState.success}</p>
               ) : null}
               <div className="space-y-2">
                 <Label htmlFor="edit-title">Title</Label>
@@ -169,119 +195,12 @@ export function TaskDetailSheet({
                   rows={4}
                 />
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-status">Status</Label>
-                  <select
-                    id="edit-status"
-                    name="status"
-                    defaultValue={task.status}
-                    className="flex h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                  >
-                    {TASK_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {TASK_STATUS_LABELS[status]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-priority">Priority</Label>
-                  <select
-                    id="edit-priority"
-                    name="priority"
-                    defaultValue={task.priority}
-                    className="flex h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                  >
-                    {TASK_PRIORITIES.map((priority) => (
-                      <option key={priority} value={priority}>
-                        {TASK_PRIORITY_LABELS[priority]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-assignee">Assignee</Label>
-                  <select
-                    id="edit-assignee"
-                    name="assigneeId"
-                    defaultValue={task.assignee_id ?? ""}
-                    className="flex h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                  >
-                    <option value="">Unassigned</option>
-                    {members.map((member) => (
-                      <option key={member.user_id} value={member.user_id}>
-                        {member.profile?.display_name ?? member.user_id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-due">Due date</Label>
-                  <Input
-                    id="edit-due"
-                    name="dueDate"
-                    type="date"
-                    defaultValue={task.due_date ?? ""}
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="edit-initiative">Roadmap initiative</Label>
-                  <select
-                    id="edit-initiative"
-                    name="initiativeId"
-                    value={selectedInitiativeId}
-                    onChange={(event) => setSelectedInitiativeId(event.target.value)}
-                    className="flex h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                  >
-                    <option value="">None</option>
-                    {initiatives.map((initiative) => (
-                      <option key={initiative.id} value={initiative.id}>
-                        {initiative.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="edit-milestone">Milestone</Label>
-                  <select
-                    id="edit-milestone"
-                    name="milestoneId"
-                    key={`${task.id}-${selectedInitiativeId}`}
-                    defaultValue={task.milestone_id ?? ""}
-                    className="flex h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                  >
-                    <option value="">None</option>
-                    {filteredMilestones.map((milestone) => (
-                      <option key={milestone.id} value={milestone.id}>
-                        {milestone.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
             </form>
           ) : (
             <div className="space-y-3 text-sm">
               <p className="whitespace-pre-wrap text-muted-foreground">
                 {task.description || "No description provided."}
               </p>
-              {task.assignee ? (
-                <p>
-                  Assignee: <strong>{task.assignee.display_name}</strong>
-                </p>
-              ) : null}
-              {task.initiative ? (
-                <p>
-                  Initiative:{" "}
-                  <Link
-                    href={`/projects/${slug}/roadmap/${task.initiative.slug}`}
-                    className="text-info hover:underline"
-                  >
-                    {task.initiative.name}
-                  </Link>
-                </p>
-              ) : null}
             </div>
           )}
 
@@ -291,7 +210,7 @@ export function TaskDetailSheet({
             items={task.checklist_items}
             members={members}
             canEdit={canEdit}
-            highlightedItemIds={highlightedChecklistIds}
+            onChanged={onActivity}
           />
 
           <TaskGithubSection
@@ -311,16 +230,9 @@ export function TaskDetailSheet({
             </h3>
             <div className="space-y-3">
               {task.comments.map((comment) => (
-                <motion.div
+                <div
                   key={comment.id}
-                  layout
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                  className={cn(
-                    "rounded-lg border border-border/60 bg-surface-raised/50 p-3",
-                    highlightedCommentIds?.has(comment.id) && "remote-update-pulse ring-2 ring-info/50"
-                  )}
+                  className="rounded-lg border border-border/60 bg-surface-raised/50 p-3"
                 >
                   <div className="mb-2 flex items-center gap-2">
                     <Avatar className="size-6 rounded-md">
@@ -336,7 +248,7 @@ export function TaskDetailSheet({
                     </span>
                   </div>
                   <p className="text-sm whitespace-pre-wrap">{comment.body}</p>
-                </motion.div>
+                </div>
               ))}
             </div>
             {canEdit ? (
@@ -369,7 +281,7 @@ export function TaskDetailSheet({
                   <p className="text-sm text-danger">{commentState.error}</p>
                 ) : null}
                 <Button type="submit" size="sm" disabled={commentPending || !commentDraft.value.trim()}>
-                  {commentPending ? "Posting..." : "Post comment"}
+                  Post comment
                 </Button>
               </form>
             ) : null}
@@ -377,43 +289,26 @@ export function TaskDetailSheet({
         </div>
 
         {canEdit ? (
-          <div className="shrink-0 space-y-3 border-t border-border/60 bg-background px-6 py-4">
-            <div className="flex flex-wrap gap-2">
-              {TASK_STATUSES.filter((status) => status !== task.status).map((status) => (
-                <Button
-                  key={status}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    void updateTaskStatus(task.id, slug, status).then(() => router.refresh())
-                  }}
-                >
-                  Mark {TASK_STATUS_LABELS[status]}
-                </Button>
-              ))}
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="text-danger"
-                disabled={isArchiving}
-                onClick={() => {
-                  startArchive(async () => {
-                    await archiveTask(task.id, slug)
-                    closeDialog()
-                    router.refresh()
-                  })
-                }}
-              >
-                Archive task
-              </Button>
-              <Button type="submit" form="task-edit-form" disabled={updatePending}>
-                {updatePending ? "Saving..." : "Save changes"}
-              </Button>
-            </div>
+          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-background px-6 py-4">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="text-danger"
+              disabled={isArchiving}
+              onClick={() => {
+                startArchive(async () => {
+                  await archiveTask(task.id, slug)
+                  onClose()
+                  onActivity?.()
+                })
+              }}
+            >
+              Archive task
+            </Button>
+            <Button type="submit" form="task-edit-form" disabled={updatePending}>
+              Save changes
+            </Button>
           </div>
         ) : null}
       </DialogContent>

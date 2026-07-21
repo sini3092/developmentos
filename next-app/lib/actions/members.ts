@@ -74,7 +74,10 @@ export async function createWorkspaceMember(
       email,
       password,
       email_confirm: true,
-      user_metadata: { display_name: displayName },
+      user_metadata: {
+        display_name: displayName,
+        must_change_password: true,
+      },
     })
 
     if (createError) {

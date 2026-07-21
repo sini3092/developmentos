@@ -200,3 +200,12 @@ html[data-density="compact"] .p-6 {
 .remote-update-pulse {
   animation: remote-update-pulse 1.4s ease-out;
 }
+
+@keyframes navigation-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}

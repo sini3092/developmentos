@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { isPublicSignUpEnabled } from "@/lib/auth/registration-policy"
 
 const AUTH_ROUTES = ["/auth/sign-in", "/auth/sign-up", "/auth/forgot-password"]
+const CHANGE_PASSWORD_ROUTE = "/auth/change-password"
 const PUBLIC_PREFIXES = ["/auth", "/invite"]
 const ONBOARDING_PREFIXES = ["/onboarding"]
 const PUBLIC_API_PREFIXES = ["/api/webhooks", "/api/push/deliver", "/api/bridge"]
@@ -57,6 +58,7 @@ export async function updateSession(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims()
   const isAuthenticated = Boolean(data?.claims?.sub)
+  const mustChangePassword = data?.claims?.user_metadata?.must_change_password === true
   const pathname = request.nextUrl.pathname
 
   if (pathname === "/auth/sign-up" && !isPublicSignUpEnabled()) {
@@ -65,6 +67,25 @@ export async function updateSession(request: NextRequest) {
     signInUrl.searchParams.set("notice", "registration_disabled")
     signInUrl.searchParams.delete("next")
     return NextResponse.redirect(signInUrl)
+  }
+
+  if (pathname === CHANGE_PASSWORD_ROUTE && !isAuthenticated) {
+    const signInUrl = request.nextUrl.clone()
+    signInUrl.pathname = "/auth/sign-in"
+    signInUrl.searchParams.set("next", CHANGE_PASSWORD_ROUTE)
+    return NextResponse.redirect(signInUrl)
+  }
+
+  if (
+    isAuthenticated &&
+    mustChangePassword &&
+    pathname !== CHANGE_PASSWORD_ROUTE &&
+    !isPublicApiPath(pathname)
+  ) {
+    const changePasswordUrl = request.nextUrl.clone()
+    changePasswordUrl.pathname = CHANGE_PASSWORD_ROUTE
+    changePasswordUrl.search = ""
+    return NextResponse.redirect(changePasswordUrl)
   }
 
   if (

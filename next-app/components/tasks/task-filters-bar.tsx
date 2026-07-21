@@ -1,9 +1,9 @@
 "use client"
 
-import { useRouter, useSearchParams } from "next/navigation"
 import { Plus } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useTransition } from "react"
 
+import type { TaskListFilters } from "@/lib/auth/task-context"
 import type { BoardList, Label, Milestone, ProjectMemberWithProfile } from "@/lib/database.types"
 import type { TaskPriority } from "@/lib/database.types"
 import {
@@ -34,6 +34,10 @@ type TaskFiltersBarProps = {
   basePath: string
   defaultListId?: string | null
   onCreateOpenChange?: (open: boolean) => void
+  onTaskCreated?: (taskId: string) => void
+  clientMode?: boolean
+  filters?: TaskListFilters
+  onFiltersChange?: (filters: TaskListFilters) => void
 }
 
 export function TaskFiltersBar({
@@ -47,18 +51,21 @@ export function TaskFiltersBar({
   basePath,
   defaultListId,
   onCreateOpenChange,
+  onTaskCreated,
+  clientMode = false,
+  filters,
+  onFiltersChange,
 }: TaskFiltersBarProps) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
+  const [searchInput, setSearchInput] = useState(filters?.search ?? "")
+  const [, startTransition] = useTransition()
 
-  const listFilter = searchParams.get("list") || "all"
-  const assigneeFilter = searchParams.get("assignee") || "all"
-  const priorityFilter = (searchParams.get("priority") as TaskPriority | "all") || "all"
-  const disciplineFilter = searchParams.get("discipline") || "all"
-  const labelFilter = searchParams.get("label") || "all"
-  const milestoneFilter = searchParams.get("milestone") || "all"
-  const search = searchParams.get("q") || ""
+  const listFilter = filters?.listId ?? "all"
+  const assigneeFilter = filters?.assigneeId ?? "all"
+  const priorityFilter = (filters?.priority as TaskPriority | "all") ?? "all"
+  const disciplineFilter = filters?.discipline ?? "all"
+  const labelFilter = filters?.labelId ?? "all"
+  const milestoneFilter = filters?.milestoneId ?? "all"
 
   useEffect(() => {
     if (defaultListId) {
@@ -66,33 +73,71 @@ export function TaskFiltersBar({
     }
   }, [defaultListId])
 
+  useEffect(() => {
+    setSearchInput(filters?.search ?? "")
+  }, [filters?.search])
+
+  useEffect(() => {
+    if (!clientMode || !onFiltersChange || !filters) return
+
+    const timer = window.setTimeout(() => {
+      if ((filters.search ?? "") === searchInput) return
+      onFiltersChange({ ...filters, search: searchInput || undefined })
+    }, 250)
+
+    return () => window.clearTimeout(timer)
+  }, [clientMode, filters, onFiltersChange, searchInput])
+
   function handleCreateOpenChange(open: boolean) {
     setCreateOpen(open)
     onCreateOpenChange?.(open)
   }
 
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    if (!value || value === "all") {
-      params.delete(key)
-    } else {
-      params.set(key, value)
+  function updateFilter(key: keyof TaskListFilters, value: string) {
+    if (!clientMode || !onFiltersChange || !filters) return
+
+    const next = { ...filters }
+
+    switch (key) {
+      case "listId":
+        next.listId = value || "all"
+        break
+      case "assigneeId":
+        next.assigneeId = value || "all"
+        break
+      case "priority":
+        next.priority = (value || "all") as TaskListFilters["priority"]
+        break
+      case "discipline":
+        next.discipline = (value || "all") as TaskListFilters["discipline"]
+        break
+      case "labelId":
+        next.labelId = value || "all"
+        break
+      case "milestoneId":
+        next.milestoneId = value || "all"
+        break
+      case "search":
+        next.search = value || undefined
+        break
     }
-    const query = params.toString()
-    router.push(query ? `/projects/${slug}${basePath}?${query}` : `/projects/${slug}${basePath}`)
+
+    startTransition(() => {
+      onFiltersChange(next)
+    })
   }
 
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
       <div className="flex flex-wrap gap-2">
-        <FilterButton active={listFilter === "all"} onClick={() => updateFilter("list", "all")}>
+        <FilterButton active={listFilter === "all"} onClick={() => updateFilter("listId", "all")}>
           All lists
         </FilterButton>
         {lists.map((list) => (
           <FilterButton
             key={list.id}
             active={listFilter === list.id}
-            onClick={() => updateFilter("list", list.id)}
+            onClick={() => updateFilter("listId", list.id)}
           >
             {list.name}
           </FilterButton>
@@ -102,13 +147,19 @@ export function TaskFiltersBar({
       <div className="flex flex-wrap items-center gap-2">
         <Input
           placeholder="Search tasks..."
-          value={search}
-          onChange={(event) => updateFilter("q", event.target.value)}
+          value={searchInput}
+          onChange={(event) => {
+            const value = event.target.value
+            setSearchInput(value)
+            if (!clientMode) {
+              updateFilter("search", value)
+            }
+          }}
           className="h-8 w-44"
         />
         <select
           value={assigneeFilter}
-          onChange={(event) => updateFilter("assignee", event.target.value)}
+          onChange={(event) => updateFilter("assigneeId", event.target.value)}
           className="h-8 rounded-lg border border-input bg-background px-2.5 text-sm"
         >
           <option value="all">All assignees</option>
@@ -146,7 +197,7 @@ export function TaskFiltersBar({
         {projectLabels.length > 0 ? (
           <select
             value={labelFilter}
-            onChange={(event) => updateFilter("label", event.target.value)}
+            onChange={(event) => updateFilter("labelId", event.target.value)}
             className="h-8 rounded-lg border border-input bg-background px-2.5 text-sm"
           >
             <option value="all">All labels</option>
@@ -160,7 +211,7 @@ export function TaskFiltersBar({
         {milestones.length > 0 ? (
           <select
             value={milestoneFilter}
-            onChange={(event) => updateFilter("milestone", event.target.value)}
+            onChange={(event) => updateFilter("milestoneId", event.target.value)}
             className="h-8 rounded-lg border border-input bg-background px-2.5 text-sm"
           >
             <option value="all">All milestones</option>
@@ -179,19 +230,18 @@ export function TaskFiltersBar({
                 New task
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+            <DialogContent className="!duration-0 data-open:animate-none data-closed:animate-none max-h-[90vh] overflow-y-auto sm:max-w-lg">
               <DialogHeader>
-                <DialogTitle>Create task</DialogTitle>
+                <DialogTitle>Create card</DialogTitle>
               </DialogHeader>
               <CreateTaskForm
                 projectId={projectId}
                 slug={slug}
-                members={members}
                 lists={lists}
                 defaultListId={defaultListId ?? lists[0]?.id}
-                onSuccess={() => {
+                onSuccess={(taskId) => {
                   handleCreateOpenChange(false)
-                  router.refresh()
+                  onTaskCreated?.(taskId)
                 }}
               />
             </DialogContent>
@@ -218,7 +268,7 @@ function FilterButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
+      className={`rounded-lg px-2.5 py-1 text-xs ${
         active
           ? "bg-primary text-primary-foreground"
           : "bg-muted text-muted-foreground hover:text-foreground"
