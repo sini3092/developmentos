@@ -100,16 +100,18 @@ export function GithubActivityEventRow({
       >
         {content}
       </button>
-      <GithubEventDetailDialog
-        open={open}
-        onOpenChange={setOpen}
-        slug={slug}
-        eventType={eventType}
-        message={message}
-        newValue={newValue}
-        createdAt={createdAt}
-        actorDisplayName={actorDisplayName}
-      />
+      {open ? (
+        <GithubEventDetailDialog
+          open={open}
+          onOpenChange={setOpen}
+          slug={slug}
+          eventType={eventType}
+          message={message}
+          newValue={newValue}
+          createdAt={createdAt}
+          actorDisplayName={actorDisplayName}
+        />
+      ) : null}
     </>
   )
 }

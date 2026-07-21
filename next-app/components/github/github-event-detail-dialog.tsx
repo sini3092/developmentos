@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ExternalLink, GitBranch, GitCommitHorizontal } from "lucide-react"
 
 import { GithubDiffViewer } from "@/components/github/github-diff-viewer"
@@ -61,7 +61,7 @@ export function GithubEventDetailDialog({
   actorDisplayName,
 }: GithubEventDetailDialogProps) {
   const value = parseGithubActivityValue(newValue)
-  const commits = getGithubCommits(value)
+  const commits = useMemo(() => getGithubCommits(value), [value])
   const externalUrl = getActivityEventUrl(eventType, newValue)
   const summary = formatActivityEventMessage(eventType, message, newValue)
 
@@ -77,15 +77,14 @@ export function GithubEventDetailDialog({
 
   useEffect(() => {
     if (!open) {
-      setTab("commits")
-      setSelectedSha(null)
-      setDiff(null)
-      setDiffError(null)
       return
     }
 
     const defaultSha = commits[0]?.id ?? value?.latest_commit?.id ?? null
+    setTab("commits")
     setSelectedSha(defaultSha)
+    setDiff(null)
+    setDiffError(null)
   }, [open, commits, value?.latest_commit?.id])
 
   useEffect(() => {
@@ -187,7 +186,7 @@ export function GithubEventDetailDialog({
             commits.length > 0 ? (
               <ul className="space-y-2">
                 {commits.map((commit) => {
-                  const firstLine = commit.message.split("\n")[0]
+                  const firstLine = (commit.message ?? "Commit").split("\n")[0]
                   const isSelected = selectedSha === commit.id
                   return (
                     <li key={commit.id}>

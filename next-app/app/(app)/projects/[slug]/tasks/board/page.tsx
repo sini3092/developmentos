@@ -4,8 +4,7 @@ import { ListTodo } from "lucide-react"
 
 import { PageHeader } from "@/components/layout/page-header"
 import { ProjectNav } from "@/components/projects/project-nav"
-import { KanbanBoard } from "@/components/tasks/kanban-board"
-import { TaskBoardLive } from "@/components/tasks/task-board-live"
+import { TaskBoardPageClient } from "@/components/tasks/task-board-page-client"
 import { getProjectTasks, getTaskDetail } from "@/lib/auth/task-context"
 import { getProjectInitiatives, getProjectMilestones } from "@/lib/auth/roadmap-context"
 import { requireProject } from "@/lib/auth/project-context"
@@ -44,7 +43,7 @@ export default async function TasksBoardPage({ params, searchParams }: BoardPage
       <ProjectNav slug={slug} canManage={canManage} />
 
       <Suspense fallback={null}>
-        <TaskBoardLive
+        <TaskBoardPageClient
           slug={slug}
           projectId={project.id}
           initialTasks={tasks}
@@ -65,21 +64,8 @@ export default async function TasksBoardPage({ params, searchParams }: BoardPage
           repoOwner={project.github_owner}
           repoName={project.github_repo_name}
           canEdit={canEdit}
-        >
-          {({ tasks: liveTasks, highlightedTaskIds, onDragActiveChange }) => (
-            <KanbanBoard
-              slug={slug}
-              projectId={project.id}
-              tasks={liveTasks}
-              members={members}
-              projectLabels={[]}
-              milestones={milestones.map((item) => ({ id: item.id, name: item.name }))}
-              canEdit={canEdit}
-              highlightedTaskIds={highlightedTaskIds}
-              onDragActiveChange={onDragActiveChange}
-            />
-          )}
-        </TaskBoardLive>
+          projectLabels={[]}
+        />
       </Suspense>
     </div>
   )
