@@ -53,6 +53,58 @@ function toTaskShell(task: TaskWithPeople): TaskDetail {
   }
 }
 
+function createLoadingTaskDetail(taskId: string, projectId: string): TaskDetail {
+  const now = new Date().toISOString()
+
+  return {
+    id: taskId,
+    workspace_id: "",
+    project_id: projectId,
+    number: 0,
+    identifier: "…",
+    title: "Loading…",
+    description: null,
+    status: "backlog",
+    priority: "none",
+    assignee_id: null,
+    creator_id: "",
+    discipline: null,
+    parent_task_id: null,
+    start_date: null,
+    due_date: null,
+    estimate_hours: null,
+    progress: 0,
+    board_position: 0,
+    list_id: null,
+    initiative_id: null,
+    milestone_id: null,
+    deleted_at: null,
+    created_at: now,
+    updated_at: now,
+    assignee: null,
+    creator: null,
+    comment_count: 0,
+    labels: [],
+    checklist_done: 0,
+    checklist_total: 0,
+    checklist_preview: [],
+    attachment_count: 0,
+    comments: [],
+    initiative: null,
+    milestone: null,
+    checklist_items: [],
+    pull_requests: [],
+    branches: [],
+    attachments: [],
+    linked_assets: [],
+    linked_decisions: [],
+    linked_design_documents: [],
+    linked_lore_entries: [],
+    blocked_by: [],
+    blocks: [],
+  }
+}
+
 export function TaskBoardLive({
   slug,
   projectId,
@@ -184,29 +236,7 @@ export function TaskBoardLive({
 
       const fromBoard = allTasks.find((task) => task.id === taskId)
       setSelectedTask(
-        fromBoard
-          ? toTaskShell(fromBoard)
-          : ({
-              id: taskId,
-              title: "Loading…",
-              identifier: "…",
-              project_id: projectId,
-              comments: [],
-              checklist_items: [],
-              pull_requests: [],
-              branches: [],
-              attachments: [],
-              linked_assets: [],
-              linked_decisions: [],
-              linked_design_documents: [],
-              linked_lore_entries: [],
-              blocked_by: [],
-              blocks: [],
-              labels: [],
-              initiative: null,
-              milestone: null,
-              progress: 0,
-            } as TaskDetail)
+        fromBoard ? toTaskShell(fromBoard) : createLoadingTaskDetail(taskId, projectId)
       )
       setIsLoadingDetail(true)
 
@@ -216,7 +246,7 @@ export function TaskBoardLive({
         setIsLoadingDetail(false)
       })
     },
-    [allTasks, loadTaskDetail]
+    [allTasks, loadTaskDetail, projectId]
   )
 
   const prefetchTask = useCallback(
