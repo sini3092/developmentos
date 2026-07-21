@@ -2,17 +2,15 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { Plus } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
-import type { Label, Milestone, ProjectMemberWithProfile } from "@/lib/database.types"
-import type { TaskPriority, TaskStatus } from "@/lib/database.types"
+import type { BoardList, Label, Milestone, ProjectMemberWithProfile } from "@/lib/database.types"
+import type { TaskPriority } from "@/lib/database.types"
 import {
   DISCIPLINE_LABELS,
   DISCIPLINES,
-  OPEN_TASK_STATUSES,
   TASK_PRIORITIES,
   TASK_PRIORITY_LABELS,
-  TASK_STATUS_LABELS,
 } from "@/lib/constants/tasks"
 import { CreateTaskForm } from "@/components/tasks/create-task-form"
 import { Button } from "@/components/ui/button"
@@ -31,8 +29,11 @@ type TaskFiltersBarProps = {
   members: ProjectMemberWithProfile[]
   projectLabels: Label[]
   milestones: Array<Pick<Milestone, "id" | "name">>
+  lists?: BoardList[]
   canEdit: boolean
   basePath: string
+  defaultListId?: string | null
+  onCreateOpenChange?: (open: boolean) => void
 }
 
 export function TaskFiltersBar({
@@ -41,20 +42,34 @@ export function TaskFiltersBar({
   members,
   projectLabels,
   milestones,
+  lists = [],
   canEdit,
   basePath,
+  defaultListId,
+  onCreateOpenChange,
 }: TaskFiltersBarProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
 
-  const statusFilter = (searchParams.get("status") as TaskStatus | "all") || "all"
+  const listFilter = searchParams.get("list") || "all"
   const assigneeFilter = searchParams.get("assignee") || "all"
   const priorityFilter = (searchParams.get("priority") as TaskPriority | "all") || "all"
   const disciplineFilter = searchParams.get("discipline") || "all"
   const labelFilter = searchParams.get("label") || "all"
   const milestoneFilter = searchParams.get("milestone") || "all"
   const search = searchParams.get("q") || ""
+
+  useEffect(() => {
+    if (defaultListId) {
+      setCreateOpen(true)
+    }
+  }, [defaultListId])
+
+  function handleCreateOpenChange(open: boolean) {
+    setCreateOpen(open)
+    onCreateOpenChange?.(open)
+  }
 
   function updateFilter(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -70,16 +85,16 @@ export function TaskFiltersBar({
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
       <div className="flex flex-wrap gap-2">
-        <FilterButton active={statusFilter === "all"} onClick={() => updateFilter("status", "all")}>
-          All
+        <FilterButton active={listFilter === "all"} onClick={() => updateFilter("list", "all")}>
+          All lists
         </FilterButton>
-        {OPEN_TASK_STATUSES.map((status) => (
+        {lists.map((list) => (
           <FilterButton
-            key={status}
-            active={statusFilter === status}
-            onClick={() => updateFilter("status", status)}
+            key={list.id}
+            active={listFilter === list.id}
+            onClick={() => updateFilter("list", list.id)}
           >
-            {TASK_STATUS_LABELS[status]}
+            {list.name}
           </FilterButton>
         ))}
       </div>
@@ -157,9 +172,9 @@ export function TaskFiltersBar({
           </select>
         ) : null}
         {canEdit ? (
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
             <DialogTrigger asChild>
-              <Button size="sm">
+              <Button id="board-create-task-trigger" size="sm">
                 <Plus className="size-3.5" />
                 New task
               </Button>
@@ -172,8 +187,10 @@ export function TaskFiltersBar({
                 projectId={projectId}
                 slug={slug}
                 members={members}
+                lists={lists}
+                defaultListId={defaultListId ?? lists[0]?.id}
                 onSuccess={() => {
-                  setCreateOpen(false)
+                  handleCreateOpenChange(false)
                   router.refresh()
                 }}
               />

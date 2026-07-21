@@ -30,7 +30,11 @@ export async function enrichBoardTasks(
         : Promise.resolve({ data: [] as Profile[] }),
       supabase.from("task_comments").select("task_id").in("task_id", taskIds),
       supabase.from("task_labels").select("task_id, label_id").in("task_id", taskIds),
-      supabase.from("task_checklist_items").select("task_id, completed").in("task_id", taskIds),
+      supabase
+        .from("task_checklist_items")
+        .select("id, task_id, title, completed, position")
+        .in("task_id", taskIds)
+        .order("position", { ascending: true }),
       supabase.from("task_attachments").select("task_id").in("task_id", taskIds),
     ])
 
@@ -50,11 +54,26 @@ export async function enrichBoardTasks(
   }
 
   const checklistByTask = new Map<string, { done: number; total: number }>()
+  const checklistPreviewByTask = new Map<
+    string,
+    Array<{ id: string; title: string; completed: boolean }>
+  >()
+
   for (const item of checklistItems ?? []) {
     const current = checklistByTask.get(item.task_id) ?? { done: 0, total: 0 }
     current.total += 1
     if (item.completed) current.done += 1
     checklistByTask.set(item.task_id, current)
+
+    const preview = checklistPreviewByTask.get(item.task_id) ?? []
+    if (preview.length < 4) {
+      preview.push({
+        id: item.id,
+        title: item.title,
+        completed: item.completed,
+      })
+      checklistPreviewByTask.set(item.task_id, preview)
+    }
   }
 
   const attachmentCounts = (attachments ?? []).reduce<Record<string, number>>(
@@ -81,6 +100,7 @@ export async function enrichBoardTasks(
     labels: labelsByTask.get(task.id) ?? [],
     checklist_done: checklistByTask.get(task.id)?.done ?? 0,
     checklist_total: checklistByTask.get(task.id)?.total ?? 0,
+    checklist_preview: checklistPreviewByTask.get(task.id) ?? [],
     attachment_count: attachmentCounts[task.id] ?? 0,
   }))
 }

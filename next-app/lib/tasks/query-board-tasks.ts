@@ -23,6 +23,10 @@ export async function queryBoardTasks(
     query = query.eq("status", filters.status)
   }
 
+  if (filters.listId && filters.listId !== "all") {
+    query = query.eq("list_id", filters.listId)
+  }
+
   if (filters.assigneeId === "unassigned") {
     query = query.is("assignee_id", null)
   } else if (filters.assigneeId && filters.assigneeId !== "all") {

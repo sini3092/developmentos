@@ -2,6 +2,7 @@ import type { Discipline, TaskPriority, TaskStatus } from "@/lib/database.types"
 
 export type TaskSearchParams = {
   status?: string
+  list?: string
   assignee?: string
   q?: string
   priority?: string
@@ -14,6 +15,7 @@ export type TaskSearchParams = {
 export function parseTaskListFilters(query: TaskSearchParams) {
   return {
     status: (query.status as TaskStatus | "all") || "all",
+    listId: query.list || "all",
     assigneeId: query.assignee || "all",
     search: query.q,
     priority: (query.priority as TaskPriority | "all") || "all",

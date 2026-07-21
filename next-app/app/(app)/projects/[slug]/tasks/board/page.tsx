@@ -5,6 +5,7 @@ import { ListTodo } from "lucide-react"
 import { PageHeader } from "@/components/layout/page-header"
 import { ProjectNav } from "@/components/projects/project-nav"
 import { TaskBoardPageClient } from "@/components/tasks/task-board-page-client"
+import { getProjectBoardLists } from "@/lib/auth/board-context"
 import { getProjectTasks, getTaskDetail } from "@/lib/auth/task-context"
 import { getProjectInitiatives, getProjectMilestones } from "@/lib/auth/roadmap-context"
 import { requireProject } from "@/lib/auth/project-context"
@@ -24,7 +25,10 @@ export default async function TasksBoardPage({ params, searchParams }: BoardPage
     canManage || (currentMembership !== null && currentMembership.role !== "viewer")
 
   const filters = parseTaskListFilters(query)
-  const tasks = await getProjectTasks(project.id, filters)
+  const [tasks, lists] = await Promise.all([
+    getProjectTasks(project.id, filters),
+    getProjectBoardLists(project.id),
+  ])
   const [initiatives, milestones] = await Promise.all([
     getProjectInitiatives(project.id),
     getProjectMilestones(project.id),
@@ -36,7 +40,7 @@ export default async function TasksBoardPage({ params, searchParams }: BoardPage
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Tasks"
-        description={`Kanban board for ${project.name} · prefix ${project.task_prefix}`}
+        description={`Task board for ${project.name} · organize work in custom lists`}
         icon={ListTodo}
       />
 
@@ -46,6 +50,7 @@ export default async function TasksBoardPage({ params, searchParams }: BoardPage
         <TaskBoardPageClient
           slug={slug}
           projectId={project.id}
+          lists={lists}
           initialTasks={tasks}
           filters={filters}
           members={members}

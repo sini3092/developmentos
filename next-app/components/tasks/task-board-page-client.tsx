@@ -4,6 +4,7 @@ import { KanbanBoard } from "@/components/tasks/kanban-board"
 import { TaskBoardLive } from "@/components/tasks/task-board-live"
 import type { TaskDetail, TaskListFilters, TaskWithPeople } from "@/lib/auth/task-context"
 import type {
+  BoardList,
   Initiative,
   Label,
   Milestone,
@@ -13,6 +14,7 @@ import type {
 type TaskBoardPageClientProps = {
   slug: string
   projectId: string
+  lists: BoardList[]
   initialTasks: TaskWithPeople[]
   filters: TaskListFilters
   members: ProjectMemberWithProfile[]
@@ -28,6 +30,7 @@ type TaskBoardPageClientProps = {
 export function TaskBoardPageClient({
   slug,
   projectId,
+  lists,
   initialTasks,
   filters,
   members,
@@ -57,6 +60,7 @@ export function TaskBoardPageClient({
         <KanbanBoard
           slug={slug}
           projectId={projectId}
+          lists={lists}
           tasks={tasks}
           members={members}
           projectLabels={projectLabels}

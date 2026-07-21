@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { LayoutGroup } from "motion/react"
 import {
   DndContext,
   DragOverlay,
@@ -14,25 +13,31 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core"
+import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable"
+
+import { reorderBoardLists } from "@/lib/actions/board-lists"
 import { moveTaskOnBoard } from "@/lib/actions/tasks"
 import type { TaskWithPeople } from "@/lib/auth/task-context"
-import type { Label, Milestone, ProjectMemberWithProfile } from "@/lib/database.types"
-import type { TaskStatus } from "@/lib/database.types"
-import { KANBAN_COLUMNS } from "@/lib/constants/tasks"
+import type { BoardList, Label, Milestone, ProjectMemberWithProfile } from "@/lib/database.types"
+import { AddBoardList } from "@/components/tasks/add-board-list"
+import { BoardListColumn } from "@/components/tasks/board-list-column"
 import { KanbanCardOverlay } from "@/components/tasks/kanban-card"
-import { KanbanColumn } from "@/components/tasks/kanban-column"
 import { TaskFiltersBar } from "@/components/tasks/task-filters-bar"
 import {
-  applyBoardPositions,
-  findTaskColumn,
-  groupTasksForKanban,
-  moveTaskInColumns,
-  type KanbanColumns,
+  applyAllBoardPositions,
+  findTaskListId,
+  groupTasksForBoard,
+  listSortableId,
+  moveTaskInBoard,
+  parseListSortableId,
+  reorderBoardListItems,
+  type KanbanBoardState,
 } from "@/lib/utils/kanban"
 
 type KanbanBoardProps = {
   slug: string
   projectId: string
+  lists: BoardList[]
   tasks: TaskWithPeople[]
   members: ProjectMemberWithProfile[]
   projectLabels: Label[]
@@ -42,9 +47,15 @@ type KanbanBoardProps = {
   onDragActiveChange?: (active: boolean) => void
 }
 
+type ActiveDrag =
+  | { type: "task"; taskId: string }
+  | { type: "list"; listId: string }
+  | null
+
 export function KanbanBoard({
   slug,
   projectId,
+  lists,
   tasks,
   members,
   projectLabels,
@@ -55,10 +66,9 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [columns, setColumns] = useState<KanbanColumns>(() =>
-    groupTasksForKanban(tasks)
-  )
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
+  const [board, setBoard] = useState<KanbanBoardState>(() => groupTasksForBoard(lists, tasks))
+  const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null)
+  const [createListId, setCreateListId] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -67,23 +77,22 @@ export function KanbanBoard({
   )
 
   useEffect(() => {
-    setColumns(groupTasksForKanban(tasks))
-  }, [tasks])
+    setBoard(groupTasksForBoard(lists, tasks))
+  }, [lists, tasks])
+
+  const listSortableIds = useMemo(
+    () => board.lists.map((list) => listSortableId(list.id)),
+    [board.lists]
+  )
 
   const activeTask = useMemo(() => {
-    if (!activeTaskId) {
-      return null
+    if (activeDrag?.type !== "task") return null
+    for (const list of board.lists) {
+      const match = board.tasksByList[list.id]?.find((task) => task.id === activeDrag.taskId)
+      if (match) return { task: match, list }
     }
-
-    for (const status of KANBAN_COLUMNS) {
-      const match = columns[status].find((task) => task.id === activeTaskId)
-      if (match) {
-        return match
-      }
-    }
-
     return null
-  }, [activeTaskId, columns])
+  }, [activeDrag, board])
 
   function openTask(taskId: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -91,94 +100,107 @@ export function KanbanBoard({
     router.push(`/projects/${slug}/tasks/board?${params.toString()}`)
   }
 
-  function resolveTarget(
+  function resolveTaskTarget(
     overId: string,
-    snapshot: KanbanColumns
-  ): { column: TaskStatus; index: number } | null {
-    if (KANBAN_COLUMNS.includes(overId as TaskStatus)) {
-      const column = overId as TaskStatus
-      return { column, index: snapshot[column].length }
+    snapshot: KanbanBoardState
+  ): { listId: string; index: number } | null {
+    const listFromSortable = parseListSortableId(overId)
+    if (listFromSortable && snapshot.tasksByList[listFromSortable]) {
+      return { listId: listFromSortable, index: snapshot.tasksByList[listFromSortable].length }
     }
 
-    const column = findTaskColumn(snapshot, overId)
-    if (!column) {
-      return null
+    if (snapshot.tasksByList[overId]) {
+      return { listId: overId, index: snapshot.tasksByList[overId].length }
     }
 
-    const index = snapshot[column].findIndex((task) => task.id === overId)
-    return { column, index: index === -1 ? snapshot[column].length : index }
+    const listId = findTaskListId(snapshot, overId)
+    if (!listId) return null
+
+    const index = snapshot.tasksByList[listId].findIndex((task) => task.id === overId)
+    return { listId, index: index === -1 ? snapshot.tasksByList[listId].length : index }
   }
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveTaskId(String(event.active.id))
+    const id = String(event.active.id)
+    const type = event.active.data.current?.type
+
+    if (type === "list") {
+      const listId = parseListSortableId(id)
+      if (listId) setActiveDrag({ type: "list", listId })
+    } else {
+      setActiveDrag({ type: "task", taskId: id })
+    }
+
     onDragActiveChange?.(true)
   }
 
   function handleDragOver(event: DragOverEvent) {
-    if (!canEdit) {
-      return
-    }
+    if (!canEdit || activeDrag?.type !== "task") return
 
     const { active, over } = event
-    if (!over) {
-      return
-    }
+    if (!over) return
 
     const activeId = String(active.id)
     const overId = String(over.id)
-    const fromColumn = findTaskColumn(columns, activeId)
-    const target = resolveTarget(overId, columns)
+    const fromListId = findTaskListId(board, activeId)
+    const target = resolveTaskTarget(overId, board)
 
-    if (!fromColumn || !target) {
-      return
+    if (!fromListId || !target) return
+
+    if (fromListId === target.listId) {
+      const fromIndex = board.tasksByList[fromListId].findIndex((task) => task.id === activeId)
+      if (fromIndex === target.index || fromIndex === target.index - 1) return
     }
 
-    if (fromColumn === target.column) {
-      const fromIndex = columns[fromColumn].findIndex((task) => task.id === activeId)
-      if (fromIndex === target.index || fromIndex === target.index - 1) {
-        return
-      }
-    }
-
-    setColumns((current) => moveTaskInColumns(current, activeId, target.column, target.index))
+    setBoard((current) => moveTaskInBoard(current, activeId, target.listId, target.index))
   }
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
-    setActiveTaskId(null)
+    const currentDrag = activeDrag
+    setActiveDrag(null)
     onDragActiveChange?.(false)
 
-    if (!canEdit || !over) {
-      return
-    }
+    if (!canEdit || !over) return
 
     const activeId = String(active.id)
     const overId = String(over.id)
-    const target = resolveTarget(overId, columns)
 
-    if (!target) {
+    if (currentDrag?.type === "list") {
+      const activeListId = parseListSortableId(activeId)
+      const overListId = parseListSortableId(overId) ?? overId
+      if (!activeListId) return
+
+      const reordered = reorderBoardListItems(board.lists, activeListId, overListId)
+      setBoard((current) => ({ ...current, lists: reordered }))
+      await reorderBoardLists(
+        slug,
+        reordered.map((list) => list.id)
+      )
+      router.refresh()
       return
     }
 
-    const next = applyBoardPositions(
-      moveTaskInColumns(columns, activeId, target.column, target.index)
+    const target = resolveTaskTarget(overId, board)
+    if (!target) return
+
+    const next = applyAllBoardPositions(
+      moveTaskInBoard(board, activeId, target.listId, target.index)
     )
-    setColumns(next)
+    setBoard(next)
 
-    const movedTask = next[target.column].find((task) => task.id === activeId)
-    if (!movedTask) {
-      return
-    }
+    const movedTask = next.tasksByList[target.listId]?.find((task) => task.id === activeId)
+    if (!movedTask) return
 
     const result = await moveTaskOnBoard(
       slug,
       activeId,
-      movedTask.status,
+      target.listId,
       movedTask.board_position
     )
 
     if (result?.error) {
-      setColumns(groupTasksForKanban(tasks))
+      setBoard(groupTasksForBoard(lists, tasks))
       return
     }
 
@@ -193,8 +215,13 @@ export function KanbanBoard({
         members={members}
         projectLabels={projectLabels}
         milestones={milestones}
+        lists={board.lists}
         canEdit={canEdit}
         basePath="/tasks/board"
+        defaultListId={createListId}
+        onCreateOpenChange={(open) => {
+          if (!open) setCreateListId(null)
+        }}
       />
 
       <DndContext
@@ -204,27 +231,36 @@ export function KanbanBoard({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={() => {
-          setActiveTaskId(null)
+          setActiveDrag(null)
           onDragActiveChange?.(false)
         }}
       >
-        <LayoutGroup id={`kanban-${projectId}`}>
-          <div className="flex gap-4 overflow-x-auto pb-2">
-            {KANBAN_COLUMNS.map((status) => (
-              <KanbanColumn
-                key={status}
-                status={status}
-                tasks={columns[status]}
-                onOpenTask={openTask}
+        <SortableContext items={listSortableIds} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {board.lists.map((list) => (
+              <BoardListColumn
+                key={list.id}
+                list={list}
+                tasks={board.tasksByList[list.id] ?? []}
+                slug={slug}
                 canEdit={canEdit}
+                onOpenTask={openTask}
+                onAddCard={(listId) => {
+                  setCreateListId(listId)
+                  const trigger = document.getElementById("board-create-task-trigger")
+                  trigger?.click()
+                }}
                 highlightedTaskIds={highlightedTaskIds}
               />
             ))}
+            <AddBoardList slug={slug} projectId={projectId} canEdit={canEdit} />
           </div>
-        </LayoutGroup>
+        </SortableContext>
 
         <DragOverlay>
-          {activeTask ? <KanbanCardOverlay task={activeTask} /> : null}
+          {activeTask ? (
+            <KanbanCardOverlay task={activeTask.task} listColor={activeTask.list.color} />
+          ) : null}
         </DragOverlay>
       </DndContext>
     </div>

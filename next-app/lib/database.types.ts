@@ -347,6 +347,36 @@ export type Database = {
         }
         Relationships: []
       }
+      board_lists: {
+        Row: {
+          id: string
+          project_id: string
+          name: string
+          color: string
+          position: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          name: string
+          color?: string
+          position?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          name?: string
+          color?: string
+          position?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tasks: {
         Row: {
           id: string
@@ -367,6 +397,7 @@ export type Database = {
           estimate_hours: number | null
           progress: number
           board_position: number
+          list_id: string | null
           initiative_id: string | null
           milestone_id: string | null
           deleted_at: string | null
@@ -392,6 +423,7 @@ export type Database = {
           estimate_hours?: number | null
           progress?: number
           board_position?: number
+          list_id?: string | null
           initiative_id?: string | null
           milestone_id?: string | null
           deleted_at?: string | null
@@ -417,6 +449,7 @@ export type Database = {
           estimate_hours?: number | null
           progress?: number
           board_position?: number
+          list_id?: string | null
           initiative_id?: string | null
           milestone_id?: string | null
           deleted_at?: string | null
@@ -1812,8 +1845,13 @@ export type Database = {
           p_assignee_id?: string | null
           p_discipline?: Discipline | null
           p_due_date?: string | null
+          p_list_id?: string | null
         }
         Returns: Database["public"]["Tables"]["tasks"]["Row"]
+      }
+      ensure_project_board_lists: {
+        Args: { p_project_id: string }
+        Returns: undefined
       }
       post_initiative_update: {
         Args: {
@@ -1954,6 +1992,7 @@ export type ProjectWithMembership = Project & {
 }
 
 export type Task = Database["public"]["Tables"]["tasks"]["Row"]
+export type BoardList = Database["public"]["Tables"]["board_lists"]["Row"]
 export type TaskComment = Database["public"]["Tables"]["task_comments"]["Row"]
 export type TaskAttachment = Database["public"]["Tables"]["task_attachments"]["Row"]
 export type Label = Database["public"]["Tables"]["labels"]["Row"]

@@ -26,6 +26,7 @@ export async function createTask(
   const title = String(formData.get("title") ?? "").trim()
   const description = String(formData.get("description") ?? "").trim()
   const status = String(formData.get("status") ?? "backlog") as TaskStatus
+  const listId = String(formData.get("listId") ?? "")
   const priority = String(formData.get("priority") ?? "none") as TaskPriority
   const assigneeId = String(formData.get("assigneeId") ?? "")
   const discipline = String(formData.get("discipline") ?? "")
@@ -45,6 +46,7 @@ export async function createTask(
     p_assignee_id: assigneeId || null,
     p_discipline: (discipline || null) as Discipline | null,
     p_due_date: dueDate || null,
+    p_list_id: listId || null,
   })
 
   if (error) {
@@ -116,14 +118,14 @@ export async function updateTask(
 export async function moveTaskOnBoard(
   slug: string,
   taskId: string,
-  status: TaskStatus,
+  listId: string,
   boardPosition: number
 ) {
   const previous = await getTaskAutomationSnapshot(taskId)
   const supabase = await createClient()
   const { error } = await supabase
     .from("tasks")
-    .update({ status, board_position: boardPosition })
+    .update({ list_id: listId, board_position: boardPosition })
     .eq("id", taskId)
 
   if (error) {

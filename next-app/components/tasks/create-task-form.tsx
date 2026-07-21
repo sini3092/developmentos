@@ -3,14 +3,12 @@
 import { useActionState, useEffect } from "react"
 
 import { createTask } from "@/lib/actions/tasks"
-import type { ProjectMemberWithProfile } from "@/lib/database.types"
+import type { BoardList, ProjectMemberWithProfile } from "@/lib/database.types"
 import {
   DISCIPLINE_LABELS,
   DISCIPLINES,
   TASK_PRIORITIES,
   TASK_PRIORITY_LABELS,
-  TASK_STATUSES,
-  TASK_STATUS_LABELS,
 } from "@/lib/constants/tasks"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,6 +19,8 @@ type CreateTaskFormProps = {
   projectId: string
   slug: string
   members: ProjectMemberWithProfile[]
+  lists: BoardList[]
+  defaultListId?: string
   onSuccess?: () => void
 }
 
@@ -28,9 +28,12 @@ export function CreateTaskForm({
   projectId,
   slug,
   members,
+  lists,
+  defaultListId,
   onSuccess,
 }: CreateTaskFormProps) {
   const [state, formAction, pending] = useActionState(createTask, {})
+  const initialListId = defaultListId ?? lists[0]?.id ?? ""
 
   useEffect(() => {
     if (state.success) {
@@ -42,6 +45,7 @@ export function CreateTaskForm({
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="status" value="backlog" />
       {state.error ? (
         <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
           {state.error}
@@ -49,29 +53,30 @@ export function CreateTaskForm({
       ) : null}
       <div className="space-y-2">
         <Label htmlFor="title">Title</Label>
-        <Input id="title" name="title" placeholder="Implement tree chopping interaction" required />
+        <Input id="title" name="title" placeholder="Shadows flicker on moving objects" required />
       </div>
       <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
         <Textarea
           id="description"
           name="description"
-          placeholder="Acceptance criteria, context, and implementation notes."
+          placeholder="What needs to happen, acceptance criteria, links."
           rows={4}
         />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="status">Status</Label>
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor="listId">List</Label>
           <select
-            id="status"
-            name="status"
+            id="listId"
+            name="listId"
             className="flex h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-            defaultValue="backlog"
+            defaultValue={initialListId}
+            key={initialListId}
           >
-            {TASK_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {TASK_STATUS_LABELS[status]}
+            {lists.map((list) => (
+              <option key={list.id} value={list.id}>
+                {list.name}
               </option>
             ))}
           </select>
@@ -129,7 +134,7 @@ export function CreateTaskForm({
         </div>
       </div>
       <Button type="submit" disabled={pending}>
-        {pending ? "Creating..." : "Create task"}
+        {pending ? "Creating..." : "Create card"}
       </Button>
     </form>
   )
