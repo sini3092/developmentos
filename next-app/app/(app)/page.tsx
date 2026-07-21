@@ -9,7 +9,6 @@ import {
   StatCard,
 } from "@/components/layout/page-header"
 import { Badge } from "@/components/ui/badge"
-import { INITIATIVE_HEALTH_LABELS } from "@/lib/constants/roadmap"
 import { getWorkspaceAnalytics } from "@/lib/auth/analytics-context"
 import { getDashboardData } from "@/lib/auth/dashboard-context"
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context"
@@ -23,7 +22,6 @@ export default async function HomePage() {
 
   const { stats } = dashboard
   const { stats: workspaceStats } = analytics
-  const weekTotal = stats.tasksDueThisWeek + stats.tasksDoneThisWeek
 
   return (
     <div className="flex flex-1 flex-col">
@@ -36,19 +34,15 @@ export default async function HomePage() {
       <div className="flex flex-1 flex-col gap-6 p-6">
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            label="Active milestone"
-            value={stats.activeMilestone?.name ?? "None"}
-            hint={
-              stats.activeMilestone
-                ? `${stats.activeMilestone.progress}% · ${INITIATIVE_HEALTH_LABELS[stats.activeMilestone.health]}`
-                : "No active milestones"
-            }
-            tone={stats.activeMilestone ? "success" : "default"}
+            label="Avg progress"
+            value={`${stats.averageProgress}%`}
+            hint={`${stats.activeInitiatives} active initiative${stats.activeInitiatives === 1 ? "" : "s"}`}
+            tone={stats.averageProgress >= 50 ? "success" : "default"}
           />
           <StatCard
-            label="Tasks this week"
-            value={`${stats.tasksDoneThisWeek} / ${weekTotal || stats.tasksDueThisWeek}`}
-            hint={`${stats.tasksDueThisWeek} still open`}
+            label="Completed this week"
+            value={String(stats.tasksDoneThisWeek)}
+            hint={`${stats.tasksDueThisWeek} due this week`}
             tone="info"
           />
           <StatCard
@@ -75,7 +69,7 @@ export default async function HomePage() {
             <StatCard
               label="Completion"
               value={`${workspaceStats.completionRate}%`}
-              hint={`${workspaceStats.doneTasks} of ${workspaceStats.totalTasks} tasks done`}
+              hint={`${workspaceStats.doneTasks} of ${workspaceStats.totalTasks} at 100% checklist`}
               tone="success"
             />
             <StatCard
@@ -99,7 +93,7 @@ export default async function HomePage() {
           </div>
 
           <div className="grid gap-6 lg:grid-cols-3">
-            <BarChart title="Tasks by status" items={analytics.tasksByStatus} />
+            <BarChart title="Tasks by progress" items={analytics.tasksByProgress} />
             <BarChart
               title="Tasks by project"
               items={analytics.tasksByProject}

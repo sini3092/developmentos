@@ -5,19 +5,26 @@ import type {
   Profile,
   Project,
   Task,
-  TaskStatus,
 } from "@/lib/database.types"
 import { createClient } from "@/lib/supabase/server"
+import { isTaskComplete, isTaskInProgress, remainingPercent } from "@/lib/utils/roadmap"
+import {
+  isBlockedListName,
+  isTaskBlocked,
+  isTaskOpen,
+} from "@/lib/utils/task-workflow"
 
 export type TaskWithProject = Task & {
   assignee: Profile | null
   project: Pick<Project, "id" | "name" | "slug" | "task_prefix" | "color">
   initiative: Pick<Initiative, "id" | "name" | "slug"> | null
   milestone: Pick<Milestone, "id" | "name" | "slug"> | null
+  list_name: string | null
 }
 
 export type DashboardStats = {
-  activeMilestone: Pick<Milestone, "id" | "name" | "progress" | "health"> | null
+  averageProgress: number
+  activeInitiatives: number
   tasksDueThisWeek: number
   tasksDoneThisWeek: number
   blockedCount: number
@@ -65,7 +72,8 @@ function toDateString(date: Date) {
 
 async function enrichTasks(
   tasks: Task[],
-  projectMap: Map<string, Pick<Project, "id" | "name" | "slug" | "task_prefix" | "color">>
+  projectMap: Map<string, Pick<Project, "id" | "name" | "slug" | "task_prefix" | "color">>,
+  listNameById: Map<string, string>
 ): Promise<TaskWithProject[]> {
   if (tasks.length === 0) {
     return []
@@ -102,6 +110,7 @@ async function enrichTasks(
     initiative:
       initiatives?.find((initiative) => initiative.id === task.initiative_id) ?? null,
     milestone: milestones?.find((milestone) => milestone.id === task.milestone_id) ?? null,
+    list_name: task.list_id ? (listNameById.get(task.list_id) ?? null) : null,
   }))
 }
 
@@ -116,6 +125,28 @@ async function getWorkspaceProjectMap(workspaceId: string) {
   return new Map((projects ?? []).map((project) => [project.id, project]))
 }
 
+async function getWorkspaceBoardLists(projectIds: string[]) {
+  if (projectIds.length === 0) {
+    return {
+      listNameById: new Map<string, string>(),
+      blockedListIds: new Set<string>(),
+    }
+  }
+
+  const supabase = await createClient()
+  const { data: boardLists } = await supabase
+    .from("board_lists")
+    .select("id, name")
+    .in("project_id", projectIds)
+
+  const listNameById = new Map((boardLists ?? []).map((list) => [list.id, list.name]))
+  const blockedListIds = new Set(
+    (boardLists ?? []).filter((list) => isBlockedListName(list.name)).map((list) => list.id)
+  )
+
+  return { listNameById, blockedListIds }
+}
+
 export async function getDashboardData(workspaceId: string, userId: string) {
   const supabase = await createClient()
   const projectMap = await getWorkspaceProjectMap(workspaceId)
@@ -128,7 +159,8 @@ export async function getDashboardData(workspaceId: string, userId: string) {
 
   const empty: DashboardData = {
     stats: {
-      activeMilestone: null,
+      averageProgress: 0,
+      activeInitiatives: 0,
       tasksDueThisWeek: 0,
       tasksDoneThisWeek: 0,
       blockedCount: 0,
@@ -145,82 +177,63 @@ export async function getDashboardData(workspaceId: string, userId: string) {
     return empty
   }
 
-  const [
-    { data: allTasks },
-    { data: activeMilestone },
-    { data: activity },
-    { data: initiatives },
-  ] = await Promise.all([
-    supabase
-      .from("tasks")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .is("deleted_at", null)
-      .neq("status", "cancelled"),
-    supabase
-      .from("milestones")
-      .select("id, name, progress, health")
-      .eq("workspace_id", workspaceId)
-      .eq("status", "active")
-      .order("target_date", { ascending: true, nullsFirst: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("activity_events")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false })
-      .limit(12),
-    supabase
-      .from("initiatives")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .neq("status", "cancelled")
-      .in("planning_horizon", ["now", "next"])
-      .order("planning_horizon")
-      .order("updated_at", { ascending: false })
-      .limit(6),
-  ])
+  const [{ listNameById, blockedListIds }, { data: allTasks }, { data: activity }, { data: initiatives }] =
+    await Promise.all([
+      getWorkspaceBoardLists(projectIds),
+      supabase
+        .from("tasks")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .is("deleted_at", null)
+        .neq("status", "cancelled"),
+      supabase
+        .from("activity_events")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .order("created_at", { ascending: false })
+        .limit(12),
+      supabase
+        .from("initiatives")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .neq("status", "cancelled")
+        .in("planning_horizon", ["now", "next"])
+        .order("planning_horizon")
+        .order("updated_at", { ascending: false })
+        .limit(6),
+    ])
 
   const tasks = allTasks ?? []
-  const openStatuses: TaskStatus[] = [
-    "backlog",
-    "ready",
-    "in_progress",
-    "in_review",
-    "blocked",
-  ]
+  const openTasks = tasks.filter((task) => isTaskOpen(task))
+  const averageProgress =
+    tasks.length > 0
+      ? Math.round(tasks.reduce((sum, task) => sum + (task.progress ?? 0), 0) / tasks.length)
+      : 0
 
-  const tasksDueThisWeek = tasks.filter(
-    (task) =>
-      task.due_date &&
-      task.due_date >= weekStart &&
-      task.due_date <= weekEnd &&
-      openStatuses.includes(task.status)
+  const activeInitiatives =
+    initiatives?.filter((initiative) => initiative.status === "active").length ?? 0
+
+  const tasksDueThisWeek = openTasks.filter(
+    (task) => task.due_date && task.due_date >= weekStart && task.due_date <= weekEnd
   ).length
 
   const tasksDoneThisWeek = tasks.filter(
     (task) =>
-      task.status === "done" &&
+      isTaskComplete(task.progress) &&
       task.updated_at.slice(0, 10) >= weekStart &&
       task.updated_at.slice(0, 10) <= weekEnd
   ).length
 
-  const blockedCount = tasks.filter((task) => task.status === "blocked").length
-  const overdueCount = tasks.filter(
-    (task) =>
-      task.due_date &&
-      task.due_date < today &&
-      openStatuses.includes(task.status)
+  const blockedCount = tasks.filter((task) => isTaskBlocked(task, blockedListIds)).length
+  const overdueCount = openTasks.filter(
+    (task) => task.due_date && task.due_date < today
   ).length
 
-  const focusRaw = tasks
-    .filter(
-      (task) => task.assignee_id === userId && openStatuses.includes(task.status)
-    )
+  const focusRaw = openTasks
+    .filter((task) => task.assignee_id === userId)
     .sort((a, b) => {
-      if (a.status === "in_progress" && b.status !== "in_progress") return -1
-      if (b.status === "in_progress" && a.status !== "in_progress") return 1
+      if (isTaskInProgress(a.progress) && !isTaskInProgress(b.progress)) return -1
+      if (isTaskInProgress(b.progress) && !isTaskInProgress(a.progress)) return 1
       if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
       if (a.due_date) return -1
       if (b.due_date) return 1
@@ -229,13 +242,13 @@ export async function getDashboardData(workspaceId: string, userId: string) {
     .slice(0, 6)
 
   const blockedRaw = tasks
-    .filter((task) => task.status === "blocked")
+    .filter((task) => isTaskBlocked(task, blockedListIds))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     .slice(0, 8)
 
   const [focusTasks, blockedTasks] = await Promise.all([
-    enrichTasks(focusRaw, projectMap),
-    enrichTasks(blockedRaw, projectMap),
+    enrichTasks(focusRaw, projectMap, listNameById),
+    enrichTasks(blockedRaw, projectMap, listNameById),
   ])
 
   const roadmap: RoadmapSnapshotItem[] =
@@ -246,7 +259,8 @@ export async function getDashboardData(workspaceId: string, userId: string) {
 
   return {
     stats: {
-      activeMilestone: activeMilestone ?? null,
+      averageProgress,
+      activeInitiatives,
       tasksDueThisWeek,
       tasksDoneThisWeek,
       blockedCount,
@@ -265,7 +279,9 @@ export async function getDashboardData(workspaceId: string, userId: string) {
 export async function getMyWorkGroups(workspaceId: string, userId: string) {
   const supabase = await createClient()
   const projectMap = await getWorkspaceProjectMap(workspaceId)
+  const projectIds = [...projectMap.keys()]
   const today = toDateString(new Date())
+  const { listNameById, blockedListIds } = await getWorkspaceBoardLists(projectIds)
 
   const { data: tasks } = await supabase
     .from("tasks")
@@ -274,15 +290,16 @@ export async function getMyWorkGroups(workspaceId: string, userId: string) {
     .eq("assignee_id", userId)
     .is("deleted_at", null)
     .neq("status", "cancelled")
-    .neq("status", "done")
     .order("due_date", { ascending: true, nullsFirst: false })
 
-  const enriched = await enrichTasks(tasks ?? [], projectMap)
+  const enriched = (await enrichTasks(tasks ?? [], projectMap, listNameById)).filter((task) =>
+    isTaskOpen(task)
+  )
 
   const groups: MyWorkGroup[] = [
     {
       label: "In progress",
-      tasks: enriched.filter((task) => task.status === "in_progress"),
+      tasks: enriched.filter((task) => isTaskInProgress(task.progress)),
     },
     {
       label: "Due today",
@@ -290,24 +307,20 @@ export async function getMyWorkGroups(workspaceId: string, userId: string) {
     },
     {
       label: "Blocked",
-      tasks: enriched.filter((task) => task.status === "blocked"),
+      tasks: enriched.filter((task) => isTaskBlocked(task, blockedListIds)),
     },
     {
-      label: "Ready",
+      label: "Not started",
       tasks: enriched.filter(
         (task) =>
-          task.status === "ready" && task.due_date !== today
-      ),
-    },
-    {
-      label: "Backlog",
-      tasks: enriched.filter(
-        (task) =>
-          task.status === "backlog" ||
-          task.status === "in_review"
+          (task.progress ?? 0) === 0 &&
+          !isTaskBlocked(task, blockedListIds) &&
+          task.due_date !== today
       ),
     },
   ]
 
   return groups.filter((group) => group.tasks.length > 0)
 }
+
+export { remainingPercent }

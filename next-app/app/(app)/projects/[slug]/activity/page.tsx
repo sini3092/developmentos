@@ -33,7 +33,7 @@ export default async function ActivityPage({ params }: ActivityPageProps) {
           <StatCard
             label="Completion"
             value={`${stats.completionRate}%`}
-            hint={`${stats.doneTasks} of ${stats.totalTasks} tasks done`}
+            hint={`${stats.doneTasks} of ${stats.totalTasks} at 100% checklist`}
             tone="success"
           />
           <StatCard
@@ -57,7 +57,7 @@ export default async function ActivityPage({ params }: ActivityPageProps) {
         </section>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <BarChart title="Tasks by status" items={analytics.tasksByStatus} />
+          <BarChart title="Tasks by progress" items={analytics.tasksByProgress} />
           <BarChart
             title="Tasks by discipline"
             items={analytics.tasksByDiscipline}

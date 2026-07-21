@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { useState, useTransition } from "react"
 import { CheckCheck, X } from "lucide-react"
 
 import {
@@ -28,7 +29,9 @@ const typeLabels: Record<Notification["type"], string> = {
 }
 
 export function InboxList({ notifications, workspaceId }: InboxListProps) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
 
   if (notifications.length === 0) {
     return (
@@ -40,8 +43,26 @@ export function InboxList({ notifications, workspaceId }: InboxListProps) {
 
   const unreadCount = notifications.filter((item) => !item.read_at).length
 
+  function runAction(action: () => Promise<{ error?: string; success?: boolean }>) {
+    setError(null)
+    startTransition(async () => {
+      const result = await action()
+      if (result.error) {
+        setError(result.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
   return (
     <div className="space-y-4">
+      {error ? (
+        <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+
       {unreadCount > 0 ? (
         <div className="flex justify-end">
           <Button
@@ -49,11 +70,7 @@ export function InboxList({ notifications, workspaceId }: InboxListProps) {
             variant="outline"
             size="sm"
             disabled={isPending}
-            onClick={() => {
-              startTransition(async () => {
-                await markAllNotificationsRead(workspaceId)
-              })
-            }}
+            onClick={() => runAction(() => markAllNotificationsRead(workspaceId))}
           >
             <CheckCheck className="size-4" />
             Mark all read
@@ -94,7 +111,7 @@ export function InboxList({ notifications, workspaceId }: InboxListProps) {
                   className="inline-block text-sm text-info hover:underline"
                   onClick={() => {
                     if (!notification.read_at) {
-                      void markNotificationRead(notification.id)
+                      runAction(() => markNotificationRead(notification.id))
                     }
                   }}
                 >
@@ -110,11 +127,7 @@ export function InboxList({ notifications, workspaceId }: InboxListProps) {
                   variant="ghost"
                   className="size-8"
                   disabled={isPending}
-                  onClick={() => {
-                    startTransition(async () => {
-                      await markNotificationRead(notification.id)
-                    })
-                  }}
+                  onClick={() => runAction(() => markNotificationRead(notification.id))}
                 >
                   <CheckCheck className="size-4" />
                 </Button>
@@ -125,11 +138,7 @@ export function InboxList({ notifications, workspaceId }: InboxListProps) {
                 variant="ghost"
                 className="size-8 text-muted-foreground"
                 disabled={isPending}
-                onClick={() => {
-                  startTransition(async () => {
-                    await dismissNotification(notification.id)
-                  })
-                }}
+                onClick={() => runAction(() => dismissNotification(notification.id))}
               >
                 <X className="size-4" />
               </Button>

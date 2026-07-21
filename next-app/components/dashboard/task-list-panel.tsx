@@ -1,7 +1,10 @@
 import Link from "next/link"
 
 import type { TaskWithProject } from "@/lib/auth/dashboard-context"
-import { TaskPriorityBadge, TaskStatusBadge } from "@/components/tasks/task-badges"
+import { remainingPercent } from "@/lib/auth/dashboard-context"
+import { TaskPriorityBadge } from "@/components/tasks/task-badges"
+import { ProgressBar } from "@/components/roadmap/progress-bar"
+import { Badge } from "@/components/ui/badge"
 import {
   PROJECT_COLOR_CLASSES,
   type ProjectColor,
@@ -35,7 +38,7 @@ export function TaskListPanel({
         return (
           <Link
             key={task.id}
-            href={`/projects/${task.project.slug}/tasks?task=${task.id}`}
+            href={`/projects/${task.project.slug}/tasks/board?task=${task.id}`}
             className="flex items-start gap-3 rounded-xl border border-border/60 bg-card p-3 shadow-xs transition-colors hover:border-border hover:bg-surface-raised/50"
           >
             <span className={`mt-1.5 size-2 shrink-0 rounded-full ${colorClass}`} />
@@ -44,7 +47,11 @@ export function TaskListPanel({
                 <span className="font-mono text-xs text-muted-foreground">
                   {task.identifier}
                 </span>
-                <TaskStatusBadge status={task.status} />
+                {task.list_name ? (
+                  <Badge variant="outline" className="font-normal">
+                    {task.list_name}
+                  </Badge>
+                ) : null}
                 <TaskPriorityBadge priority={task.priority} />
               </div>
               <p className="truncate font-medium">{task.title}</p>
@@ -52,7 +59,11 @@ export function TaskListPanel({
                 {task.project.name}
                 {task.due_date ? ` · Due ${formatDate(task.due_date)}` : ""}
                 {task.initiative ? ` · ${task.initiative.name}` : ""}
+                {` · ${remainingPercent(task.progress)}% remaining`}
               </p>
+            </div>
+            <div className="hidden w-20 pt-1 sm:block">
+              <ProgressBar value={task.progress ?? 0} className="h-1.5" />
             </div>
           </Link>
         )

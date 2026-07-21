@@ -3,9 +3,10 @@ import type {
   Discipline,
   InitiativeHealth,
   Profile,
-  TaskStatus,
 } from "@/lib/database.types"
 import { createClient } from "@/lib/supabase/server"
+import { isTaskComplete, isTaskInProgress } from "@/lib/utils/roadmap"
+import { isBlockedListName, isTaskBlocked, isTaskOpen } from "@/lib/utils/task-workflow"
 
 export type CountItem = {
   label: string
@@ -28,6 +29,7 @@ export type ProjectAnalytics = {
     loreEntries: number
   }
   tasksByStatus: CountItem[]
+  tasksByProgress: CountItem[]
   tasksByDiscipline: CountItem[]
   initiativesByHealth: CountItem[]
   activity: Array<ActivityEvent & { actor: Profile | null }>
@@ -49,19 +51,16 @@ export type WorkspaceAnalytics = {
     loreEntries: number
   }
   tasksByStatus: CountItem[]
+  tasksByProgress: CountItem[]
   tasksByProject: CountItem[]
   initiativesByHealth: CountItem[]
 }
 
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  backlog: "Backlog",
-  ready: "Ready",
-  in_progress: "In Progress",
-  in_review: "In Review",
-  blocked: "Blocked",
-  done: "Done",
-  cancelled: "Cancelled",
-}
+const TASK_PROGRESS_LABELS = {
+  complete: "Complete",
+  in_progress: "In progress",
+  not_started: "Not started",
+} as const
 
 const DISCIPLINE_LABELS: Record<Discipline, string> = {
   design: "Design",
@@ -109,6 +108,38 @@ function countByField<T extends string>(
     .sort((a, b) => b.value - a.value)
 }
 
+function buildTasksByProgress(
+  tasks: Array<{ progress?: number | null }>
+): CountItem[] {
+  const complete = tasks.filter((task) => isTaskComplete(task.progress)).length
+  const inProgress = tasks.filter((task) => isTaskInProgress(task.progress)).length
+  const notStarted = Math.max(0, tasks.length - complete - inProgress)
+
+  const items: CountItem[] = [
+    { label: TASK_PROGRESS_LABELS.complete, value: complete, tone: "success" },
+    { label: TASK_PROGRESS_LABELS.in_progress, value: inProgress, tone: "info" },
+    { label: TASK_PROGRESS_LABELS.not_started, value: notStarted, tone: "default" },
+  ]
+
+  return items.filter((item) => item.value > 0)
+}
+
+async function getBlockedListIds(projectIds: string[]) {
+  if (projectIds.length === 0) {
+    return new Set<string>()
+  }
+
+  const supabase = await createClient()
+  const { data: boardLists } = await supabase
+    .from("board_lists")
+    .select("id, name")
+    .in("project_id", projectIds)
+
+  return new Set(
+    (boardLists ?? []).filter((list) => isBlockedListName(list.name)).map((list) => list.id)
+  )
+}
+
 export async function getProjectAnalytics(
   projectId: string,
   activityLimit = 50
@@ -126,7 +157,7 @@ export async function getProjectAnalytics(
   ] = await Promise.all([
     supabase
       .from("tasks")
-      .select("status, discipline, due_date")
+      .select("status, discipline, due_date, progress, list_id")
       .eq("project_id", projectId)
       .is("deleted_at", null)
       .neq("status", "cancelled"),
@@ -159,25 +190,14 @@ export async function getProjectAnalytics(
   ])
 
   const taskRows = tasks ?? []
-  const openStatuses: TaskStatus[] = [
-    "backlog",
-    "ready",
-    "in_progress",
-    "in_review",
-    "blocked",
-  ]
+  const blockedListIds = await getBlockedListIds([projectId])
 
   const totalTasks = taskRows.length
-  const doneTasks = taskRows.filter((task) => task.status === "done").length
-  const blockedTasks = taskRows.filter((task) => task.status === "blocked").length
+  const doneTasks = taskRows.filter((task) => isTaskComplete(task.progress)).length
+  const blockedTasks = taskRows.filter((task) => isTaskBlocked(task, blockedListIds)).length
+  const openTasks = taskRows.filter((task) => isTaskOpen(task)).length
   const overdueTasks = taskRows.filter(
-    (task) =>
-      task.due_date &&
-      task.due_date < today &&
-      openStatuses.includes(task.status as TaskStatus)
-  ).length
-  const openTasks = taskRows.filter((task) =>
-    openStatuses.includes(task.status as TaskStatus)
+    (task) => task.due_date && task.due_date < today && isTaskOpen(task)
   ).length
 
   const initiativeRows = initiatives ?? []
@@ -204,18 +224,13 @@ export async function getProjectAnalytics(
       ? await supabase.from("profiles").select("*").in("id", actorIds)
       : { data: [] as Profile[] }
 
-  const statusTones: Partial<Record<TaskStatus, CountItem["tone"]>> = {
-    done: "success",
-    blocked: "danger",
-    in_progress: "info",
-    in_review: "warning",
-  }
-
   const healthTones: Partial<Record<InitiativeHealth, CountItem["tone"]>> = {
     on_track: "success",
     at_risk: "warning",
     off_track: "danger",
   }
+
+  const tasksByProgress = buildTasksByProgress(taskRows)
 
   return {
     stats: {
@@ -231,11 +246,8 @@ export async function getProjectAnalytics(
       designDocs: designDocs ?? 0,
       loreEntries: loreEntries ?? 0,
     },
-    tasksByStatus: countByField(
-      taskRows.map((task) => ({ field: task.status as TaskStatus })),
-      TASK_STATUS_LABELS,
-      statusTones
-    ),
+    tasksByStatus: tasksByProgress,
+    tasksByProgress,
     tasksByDiscipline: countByField(
       taskRows
         .filter((task) => task.discipline)
@@ -276,7 +288,7 @@ export async function getWorkspaceAnalytics(
       .eq("status", "active"),
     supabase
       .from("tasks")
-      .select("status, project_id, due_date")
+      .select("status, project_id, due_date, progress, list_id")
       .eq("workspace_id", workspaceId)
       .is("deleted_at", null)
       .neq("status", "cancelled"),
@@ -302,27 +314,17 @@ export async function getWorkspaceAnalytics(
       .neq("canon_status", "archived"),
   ])
 
+  const projectIds = (projects ?? []).map((project) => project.id)
   const projectMap = new Map((projects ?? []).map((project) => [project.id, project.name]))
   const taskRows = tasks ?? []
-  const openStatuses: TaskStatus[] = [
-    "backlog",
-    "ready",
-    "in_progress",
-    "in_review",
-    "blocked",
-  ]
+  const blockedListIds = await getBlockedListIds(projectIds)
 
   const totalTasks = taskRows.length
-  const doneTasks = taskRows.filter((task) => task.status === "done").length
-  const blockedTasks = taskRows.filter((task) => task.status === "blocked").length
+  const doneTasks = taskRows.filter((task) => isTaskComplete(task.progress)).length
+  const blockedTasks = taskRows.filter((task) => isTaskBlocked(task, blockedListIds)).length
+  const openTasks = taskRows.filter((task) => isTaskOpen(task)).length
   const overdueTasks = taskRows.filter(
-    (task) =>
-      task.due_date &&
-      task.due_date < today &&
-      openStatuses.includes(task.status as TaskStatus)
-  ).length
-  const openTasks = taskRows.filter((task) =>
-    openStatuses.includes(task.status as TaskStatus)
+    (task) => task.due_date && task.due_date < today && isTaskOpen(task)
   ).length
 
   const initiativeRows = initiatives ?? []
@@ -333,13 +335,6 @@ export async function getWorkspaceAnalytics(
 
   const activeMilestones =
     milestones?.filter((item) => item.status === "active").length ?? 0
-
-  const statusTones: Partial<Record<TaskStatus, CountItem["tone"]>> = {
-    done: "success",
-    blocked: "danger",
-    in_progress: "info",
-    in_review: "warning",
-  }
 
   const healthTones: Partial<Record<InitiativeHealth, CountItem["tone"]>> = {
     on_track: "success",
@@ -357,6 +352,8 @@ export async function getWorkspaceAnalytics(
     .map(([label, value]) => ({ label, value, tone: "info" as const }))
     .sort((a, b) => b.value - a.value)
 
+  const tasksByProgress = buildTasksByProgress(taskRows)
+
   return {
     stats: {
       totalTasks,
@@ -372,11 +369,8 @@ export async function getWorkspaceAnalytics(
       designDocs: designDocs ?? 0,
       loreEntries: loreEntries ?? 0,
     },
-    tasksByStatus: countByField(
-      taskRows.map((task) => ({ field: task.status as TaskStatus })),
-      TASK_STATUS_LABELS,
-      statusTones
-    ),
+    tasksByStatus: tasksByProgress,
+    tasksByProgress,
     tasksByProject,
     initiativesByHealth: countByField(
       initiativeRows.map((item) => ({ field: item.health as InitiativeHealth })),
