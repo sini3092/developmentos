@@ -124,7 +124,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (body.status === "running") {
     const profileNote = body.progress?.trim()
-    await supabase.rpc("post_agent_channel_message", {
+    const { error: messageError } = await supabase.rpc("post_agent_channel_message", {
       p_channel_id: job.channel_id,
       p_body:
         profileNote ||
@@ -132,24 +132,37 @@ export async function PATCH(request: Request, context: RouteContext) {
       p_agent_name: "personal",
       p_parent_message_id: job.trigger_message_id,
     })
+
+    if (messageError) {
+      return NextResponse.json({ error: messageError.message }, { status: 500 })
+    }
   }
 
   if (body.status === "completed") {
-    await supabase.rpc("post_agent_channel_message", {
+    const result = updates.result ?? "Work completed."
+    const { error: messageError } = await supabase.rpc("post_agent_channel_message", {
       p_channel_id: job.channel_id,
-      p_body: `Personal (Codex) finished.\n\n${updates.result}`,
+      p_body: `Personal (Codex) finished.\n\n${result}`.slice(0, 12000),
       p_agent_name: "personal",
       p_parent_message_id: job.trigger_message_id,
     })
+
+    if (messageError) {
+      return NextResponse.json({ error: messageError.message }, { status: 500 })
+    }
   }
 
   if (body.status === "failed") {
-    await supabase.rpc("post_agent_channel_message", {
+    const { error: messageError } = await supabase.rpc("post_agent_channel_message", {
       p_channel_id: job.channel_id,
       p_body: `Personal (Codex) could not complete the job: ${updates.error}`,
       p_agent_name: "personal",
       p_parent_message_id: job.trigger_message_id,
     })
+
+    if (messageError) {
+      return NextResponse.json({ error: messageError.message }, { status: 500 })
+    }
   }
 
   if (projectSlug && channelSlug) {

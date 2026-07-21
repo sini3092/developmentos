@@ -10,6 +10,7 @@ import { ChannelMessageItem } from "@/components/channels/channel-message-item"
 import { MentionTextarea } from "@/components/channels/mention-textarea"
 import { Button } from "@/components/ui/button"
 import { useDraftComposer } from "@/hooks/use-draft-composer"
+import { useChannelMessagesLive } from "@/hooks/use-channel-messages-live"
 import {
   getJobsForMessage,
   isAgentJobActive,
@@ -17,6 +18,7 @@ import {
   useChannelAgentsLive,
   type ChannelAgentJob,
 } from "@/hooks/use-channel-agents-live"
+import { personalAwaitingFinalReply, personalHasFinalReply } from "@/lib/channels/personal-agent-status"
 import type { AgentName } from "@/lib/utils/mentions"
 import { parseAgentMentions } from "@/lib/utils/mentions"
 
@@ -47,15 +49,22 @@ function derivePendingAgents(
 
     const messageJobs = getJobsForMessage(agentJobs, message.id)
     const stillPending = agents.filter((agent) => {
-      const job = messageJobs.find((item) => item.agent_name === agent)
-
-      if (agent === "personal" && job) {
-        if (isAgentJobActive(job)) {
-          return true
-        }
-        if (isAgentJobTerminal(job)) {
+      if (agent === "personal") {
+        if (personalHasFinalReply(message)) {
           return false
         }
+
+        const job = messageJobs.find((item) => item.agent_name === agent)
+        if (job) {
+          if (isAgentJobActive(job)) {
+            return true
+          }
+          if (isAgentJobTerminal(job)) {
+            return true
+          }
+        }
+
+        return personalAwaitingFinalReply(message)
       }
 
       return !messageHasAgentReplies(message, [agent])
@@ -109,7 +118,7 @@ export function ChannelFeed({
   const router = useRouter()
   const [state, formAction, pending] = useActionState(postChannelMessage, {})
   const formRef = useRef<HTMLFormElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesScrollRef = useRef<HTMLDivElement>(null)
   const submitBodyRef = useRef<string | null>(null)
   const [optimisticPending, setOptimisticPending] = useState<Record<string, AgentName[]>>({})
 
@@ -122,14 +131,30 @@ export function ChannelFeed({
     onJobsChange: refreshChannel,
   })
 
+  const initialAwaitingPersonal = useMemo(
+    () => channel.messages.some((message) => personalAwaitingFinalReply(message)),
+    [channel.messages]
+  )
+
+  const { messages: liveMessages } = useChannelMessagesLive({
+    channelId: channel.id,
+    initialMessages: channel.messages,
+    poll: hasActiveJobs || initialAwaitingPersonal,
+  })
+
+  const awaitingPersonalReply = useMemo(
+    () => liveMessages.some((message) => personalAwaitingFinalReply(message)),
+    [liveMessages]
+  )
+
   const derivedPending = useMemo(
-    () => derivePendingAgents(channel.messages, agentJobs),
-    [agentJobs, channel.messages]
+    () => derivePendingAgents(liveMessages, agentJobs),
+    [agentJobs, liveMessages]
   )
 
   const failedAgents = useMemo(
-    () => deriveFailedAgents(channel.messages, agentJobs),
-    [agentJobs, channel.messages]
+    () => deriveFailedAgents(liveMessages, agentJobs),
+    [agentJobs, liveMessages]
   )
 
   const pendingAgents = useMemo(
@@ -162,7 +187,7 @@ export function ChannelFeed({
   })
 
   const { clearDraft } = draft
-  const hasPendingAgents = Object.keys(pendingAgents).length > 0 || hasActiveJobs
+  const hasPendingAgents = Object.keys(pendingAgents).length > 0 || hasActiveJobs || awaitingPersonalReply
 
   useEffect(() => {
     if (state.success) {
@@ -218,12 +243,20 @@ export function ChannelFeed({
   }, [channel.messages, derivedPending])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [channel.messages.length, hasPendingAgents])
+    const container = messagesScrollRef.current
+    if (!container) {
+      return
+    }
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "smooth",
+    })
+  }, [liveMessages.length, hasPendingAgents])
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="border-b border-border/60 px-6 py-4">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-border/60 px-6 py-4">
         <div>
           <h2 className="text-lg font-semibold">{channel.name}</h2>
           {channel.description ? (
@@ -232,9 +265,12 @@ export function ChannelFeed({
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 space-y-4 overflow-y-auto p-6">
-          {channel.messages.length === 0 ? (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          ref={messagesScrollRef}
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-6"
+        >
+          {liveMessages.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/80 bg-surface-raised/50 p-10 text-center">
               <h3 className="text-sm font-medium">No messages yet</h3>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -242,7 +278,7 @@ export function ChannelFeed({
               </p>
             </div>
           ) : (
-            channel.messages.map((message) => (
+            liveMessages.map((message) => (
               <ChannelMessageItem
                 key={message.id}
                 message={message}
@@ -259,11 +295,10 @@ export function ChannelFeed({
               />
             ))
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         {canEdit ? (
-          <div className="border-t border-border/60 p-4">
+          <div className="shrink-0 border-t border-border/60 bg-background p-4">
             <form
               ref={formRef}
               action={formAction}

@@ -18,6 +18,7 @@ import {
   formatCodexNotFoundError,
   loadBridgeEnv,
   resolveCodexCommand,
+  resolveCodexInvocation,
 } from "./lib/resolve-codex-cli.mjs"
 
 const bridgeRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
@@ -138,57 +139,78 @@ async function apiRequest(url, token, path, init = {}) {
   return data
 }
 
-function quoteWindowsArg(value) {
-  const arg = String(value)
-  if (!/[\s"&|<>^%!]/.test(arg)) {
-    return arg
-  }
-  return `"${arg.replace(/"/g, '""')}"`
-}
-
 function spawnCodex(cmd, args, options) {
-  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd)) {
-    const commandLine = [quoteWindowsArg(cmd), ...args.map(quoteWindowsArg)].join(" ")
-    return spawn("cmd.exe", ["/d", "/s", "/c", commandLine], {
-      ...options,
-      shell: false,
-    })
-  }
-
-  return spawn(cmd, args, {
+  const { command, argsPrefix } = resolveCodexInvocation(cmd)
+  return spawn(command, [...argsPrefix, ...args], {
     ...options,
     shell: false,
   })
 }
 
-function buildCodexArgs(settings, prompt) {
-  const args = []
+function buildCodexArgs(settings) {
+  const args = ["exec"]
 
   if (settings?.codex_profile) {
-    args.push("--profile", settings.codex_profile)
+    args.push("-p", settings.codex_profile)
   }
   if (settings?.codex_model) {
-    args.push("--model", settings.codex_model)
+    args.push("-m", settings.codex_model)
   }
 
   if (settings?.session_mode === "resume_last") {
-    args.push("exec", "resume", "--last", prompt)
+    args.push("resume", "--last", "-")
   } else {
-    args.push("exec", prompt)
+    args.push("-")
   }
 
   return args
 }
 
+function extractCodexResult(stdout, stderr) {
+  const trimmedStdout = String(stdout ?? "").trim()
+  if (trimmedStdout) {
+    return trimmedStdout
+  }
+
+  const lines = String(stderr ?? "").split(/\r?\n/)
+  const parts = []
+  let capturing = false
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed === "codex") {
+      capturing = true
+      parts.length = 0
+      continue
+    }
+    if (capturing && (trimmed === "tokens used" || trimmed.startsWith("--------"))) {
+      break
+    }
+    if (capturing) {
+      parts.push(line)
+    }
+  }
+
+  const fromStderr = parts.join("\n").trim()
+  if (fromStderr) {
+    return fromStderr
+  }
+
+  return String(stderr ?? "").trim() || "Codex completed with no output."
+}
+
 function runCodex(cmd, cwd, settings, prompt, onProgress) {
-  const args = buildCodexArgs(settings, prompt)
+  const args = buildCodexArgs(settings)
 
   return new Promise((resolvePromise, reject) => {
     const child = spawnCodex(cmd, args, {
       cwd,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
     })
+
+    child.stdin.write(prompt)
+    child.stdin.end()
 
     let stdout = ""
     let stderr = ""
@@ -218,7 +240,7 @@ function runCodex(cmd, cwd, settings, prompt, onProgress) {
 
     child.on("close", (code) => {
       if (code === 0) {
-        resolvePromise(stdout.trim() || "Codex completed with no output.")
+        resolvePromise(extractCodexResult(stdout, stderr))
         return
       }
       reject(new Error(stderr.trim() || stdout.trim() || `Codex exited with code ${code}`))
@@ -322,7 +344,7 @@ async function processJob(options, job, settings) {
       message = formatCodexNotFoundError(resolution)
     } else if (/unexpected argument/i.test(message)) {
       message =
-        `${message} This often happens when a multi-word prompt was split by Windows. Restart the bridge after updating — if it persists, try a shorter prompt or disable resume-last in Settings.`
+        `${message} Restart start-personal.bat after updating the bridge. If it persists, try session mode "Ny samtale" in Settings.`
     }
     await patchJob(options.url, options.token, job.id, {
       status: "failed",

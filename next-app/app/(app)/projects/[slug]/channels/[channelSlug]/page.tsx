@@ -8,6 +8,8 @@ import { ProjectNav } from "@/components/projects/project-nav"
 import { getProjectChannels, requireChannel } from "@/lib/auth/channels-context"
 import { requireProject } from "@/lib/auth/project-context"
 
+export const dynamic = "force-dynamic"
+
 type ChannelPageProps = {
   params: Promise<{ slug: string; channelSlug: string }>
 }
@@ -38,14 +40,14 @@ export default async function ChannelPage({ params }: ChannelPageProps) {
   const channel = await requireChannel(project.id, channelSlug)
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Channels"
         description={`Team discussion for ${project.name}`}
         icon={MessageSquare}
       />
       <ProjectNav slug={slug} canManage={canManage} />
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <ChannelSidebar slug={slug} channels={channels} activeChannelSlug={channelSlug} />
         <ChannelFeed
           channel={channel}

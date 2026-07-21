@@ -43,12 +43,16 @@ export function useChannelAgentsLive({
     const supabase = createClient()
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("agent_jobs")
       .select("id, trigger_message_id, agent_name, status, error, updated_at")
       .eq("channel_id", channelId)
       .gte("updated_at", since)
       .order("updated_at", { ascending: false })
+
+    if (error) {
+      return
+    }
 
     const nextJobs = (data ?? [])
       .filter(
@@ -104,7 +108,12 @@ export function useChannelAgentsLive({
       )
       .subscribe()
 
+    const intervalId = window.setInterval(() => {
+      void loadJobs()
+    }, 2500)
+
     return () => {
+      window.clearInterval(intervalId)
       void supabase.removeChannel(channel)
     }
   }, [channelId, enabled, loadJobs])

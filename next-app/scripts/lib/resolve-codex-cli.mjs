@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
 function parseEnvFile(path) {
   const vars = {}
@@ -146,6 +146,18 @@ export function resolveCodexCommand({
     tried,
     found: false,
   }
+}
+
+export function resolveCodexInvocation(cmd) {
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd)) {
+    const npmDir = dirname(cmd)
+    const codexJs = join(npmDir, "node_modules", "@openai", "codex", "bin", "codex.js")
+    if (existsSync(codexJs)) {
+      return { command: process.execPath, argsPrefix: [codexJs] }
+    }
+  }
+
+  return { command: cmd, argsPrefix: [] }
 }
 
 export function formatCodexNotFoundError(resolution) {
