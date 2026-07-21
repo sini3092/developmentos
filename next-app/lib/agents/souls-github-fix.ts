@@ -186,8 +186,6 @@ async function getProjectGithub(projectId: string) {
 
   return {
     token,
-    owner: project.github_owner,
-    repo: project.github_repo_name,
     repoUrl: project.github_repo_url,
     ...repoRef,
   }
