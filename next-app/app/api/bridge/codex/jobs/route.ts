@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 
+import { buildAgentProjectContext } from "@/lib/agents/build-project-context"
 import { authenticateBridgeToken } from "@/lib/bridge/auth"
 import { DEFAULT_CODEX_SETTINGS } from "@/lib/codex/types"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
@@ -41,15 +42,33 @@ export async function GET(request: Request) {
 
   const [{ data: projects }, { data: channels }] = await Promise.all([
     projectIds.length > 0
-      ? supabase.from("projects").select("id, slug").in("id", projectIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; slug: string }> }),
+      ? supabase
+          .from("projects")
+          .select("id, slug, workspace_id")
+          .in("id", projectIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; slug: string; workspace_id: string }> }),
     channelIds.length > 0
       ? supabase.from("project_channels").select("id, slug").in("id", channelIds)
       : Promise.resolve({ data: [] as Array<{ id: string; slug: string }> }),
   ])
 
   const projectSlugById = new Map((projects ?? []).map((project) => [project.id, project.slug]))
+  const projectWorkspaceById = new Map(
+    (projects ?? []).map((project) => [project.id, project.workspace_id])
+  )
   const channelSlugById = new Map((channels ?? []).map((channel) => [channel.id, channel.slug]))
+
+  const projectContextById = new Map<string, string>()
+  await Promise.all(
+    projectIds.map(async (projectId) => {
+      const workspaceId = projectWorkspaceById.get(projectId)
+      if (!workspaceId) return
+      projectContextById.set(
+        projectId,
+        await buildAgentProjectContext(supabase, projectId, workspaceId)
+      )
+    })
+  )
 
   const settings = codexSettings
     ? {
@@ -74,6 +93,7 @@ export async function GET(request: Request) {
       created_at: job.created_at,
       project_slug: projectSlugById.get(job.project_id) ?? null,
       channel_slug: channelSlugById.get(job.channel_id) ?? null,
+      project_context: projectContextById.get(job.project_id) ?? null,
     })),
   })
 }

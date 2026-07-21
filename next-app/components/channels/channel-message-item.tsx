@@ -35,6 +35,7 @@ type ChannelMessageItemProps = {
   canEdit: boolean
   isReply?: boolean
   pendingAgents?: AgentName[]
+  failedAgent?: { agent: AgentName; error: string } | null
 }
 
 export function ChannelMessageItem({
@@ -49,6 +50,7 @@ export function ChannelMessageItem({
   canEdit,
   isReply = false,
   pendingAgents = [],
+  failedAgent = null,
 }: ChannelMessageItemProps) {
   const router = useRouter()
   const [showReplyForm, setShowReplyForm] = useState(false)
@@ -145,6 +147,13 @@ export function ChannelMessageItem({
               <AgentTypingIndicator key={agent} agent={agent} />
             ))}
           </div>
+        ) : null}
+
+        {failedAgent ? (
+          <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+            {failedAgent.agent === "personal" ? "Personal (Codex)" : "Souls"} could not complete the
+            job: {failedAgent.error}
+          </p>
         ) : null}
 
         {message.linked_task ? (

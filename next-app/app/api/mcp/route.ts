@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 
+import { buildAgentProjectContext } from "@/lib/agents/build-project-context"
 import { authenticateBridgeToken } from "@/lib/bridge/auth"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -76,6 +77,12 @@ async function handler(operation: string, raw: Record<string, unknown>, db: Admi
     if (error) throw error
     return data
   }
+  if (operation === "projects.summary") {
+    const input = z.object({ projectSlug }).strict().parse(raw)
+    const access = await projectAccess(db, userId, { slug: input.projectSlug })
+    const summary = await buildAgentProjectContext(db, access.project.id, access.project.workspace_id)
+    return { projectSlug: input.projectSlug, summary }
+  }
   if (operation === "projects.create") {
     const input = z.object({ name: z.string().trim().min(1).max(120), description: z.string().max(5000).optional(), taskPrefix: z.string().trim().min(2).max(8).regex(/^[A-Za-z0-9]+$/).optional(), visibility: z.enum(["workspace", "private"]).optional() }).strict().parse(raw)
     const ws = await memberships(db, userId)
@@ -119,24 +126,88 @@ async function handler(operation: string, raw: Record<string, unknown>, db: Admi
     const { milestoneId, targetDate, ...changes } = input; const { data, error } = await db.from("milestones").update({ ...changes, ...(targetDate && { target_date: targetDate }), updated_at: new Date().toISOString() }).eq("id", milestoneId).select().single(); if (error) throw error; return data
   }
 
+  if (operation === "board.lists") {
+    const input = z.object({ projectSlug }).strict().parse(raw)
+    const access = await projectAccess(db, userId, { slug: input.projectSlug })
+    const { data, error } = await db
+      .from("board_lists")
+      .select("id, name, color, position, created_at, updated_at")
+      .eq("project_id", access.project.id)
+      .order("position", { ascending: true })
+    if (error) throw error
+    return data ?? []
+  }
+
   if (operation === "tasks.list" || operation === "assignments.list") {
-    const input = z.object({ projectSlug, status: taskStatus.optional(), assigneeId: z.string().optional(), query: z.string().max(200).optional(), limit: limit.optional() }).strict().parse(raw)
+    const input = z.object({ projectSlug, status: taskStatus.optional(), listId: id.optional(), assigneeId: z.string().optional(), query: z.string().max(200).optional(), limit: limit.optional() }).strict().parse(raw)
     const access = await projectAccess(db, userId, { slug: input.projectSlug }); let query = db.from("tasks").select("*").eq("project_id", access.project.id).is("deleted_at", null).order("updated_at", { ascending: false }).limit(input.limit ?? 50)
-    if (input.status) query = query.eq("status", input.status); if (input.assigneeId === "unassigned") query = query.is("assignee_id", null); else if (input.assigneeId) query = query.eq("assignee_id", input.assigneeId); if (input.query) query = query.or(`title.ilike.%${input.query.replace(/[%_,()]/g, "")}%,identifier.ilike.%${input.query.replace(/[%_,()]/g, "")}%`)
+    if (input.status) query = query.eq("status", input.status); if (input.listId) query = query.eq("list_id", input.listId); if (input.assigneeId === "unassigned") query = query.is("assignee_id", null); else if (input.assigneeId) query = query.eq("assignee_id", input.assigneeId); if (input.query) query = query.or(`title.ilike.%${input.query.replace(/[%_,()]/g, "")}%,identifier.ilike.%${input.query.replace(/[%_,()]/g, "")}%`)
     const { data, error } = await query; if (error) throw error; return data ?? []
   }
   if (operation === "tasks.get") { const input = z.object({ task: z.string().min(1).max(100) }).strict().parse(raw); return (await taskAccess(db, userId, input.task)).task }
   if (operation === "tasks.create") {
-    const input = z.object({ projectSlug, title: z.string().trim().min(1).max(300), description: z.string().max(30000).optional(), status: taskStatus.optional(), priority: taskPriority.optional(), assigneeId: id.optional(), milestoneId: id.optional(), initiativeId: id.optional(), dueDate: z.iso.date().optional(), estimateHours: z.number().int().min(0).max(10000).optional() }).strict().parse(raw)
-    const access = await projectAccess(db, userId, { slug: input.projectSlug }); const { data, error } = await db.rpc("create_task", { p_project_id: access.project.id, p_title: input.title, p_description: input.description ?? null, p_status: input.status ?? "backlog", p_priority: input.priority ?? "none", p_assignee_id: input.assigneeId ?? null, p_due_date: input.dueDate ?? null }); if (error) throw error
+    const input = z.object({ projectSlug, title: z.string().trim().min(1).max(300), description: z.string().max(30000).optional(), status: taskStatus.optional(), priority: taskPriority.optional(), listId: id.optional(), assigneeId: id.optional(), milestoneId: id.optional(), initiativeId: id.optional(), dueDate: z.iso.date().optional(), estimateHours: z.number().int().min(0).max(10000).optional() }).strict().parse(raw)
+    const access = await projectAccess(db, userId, { slug: input.projectSlug }); const { data, error } = await db.rpc("create_task", { p_project_id: access.project.id, p_title: input.title, p_description: input.description ?? null, p_status: input.status ?? "backlog", p_priority: input.priority ?? "none", p_assignee_id: input.assigneeId ?? null, p_due_date: input.dueDate ?? null, p_list_id: input.listId ?? null }); if (error) throw error
     if (input.milestoneId || input.initiativeId || input.estimateHours !== undefined) await db.from("tasks").update({ milestone_id: input.milestoneId, initiative_id: input.initiativeId, estimate_hours: input.estimateHours }).eq("id", data.id)
     return data
   }
   if (operation === "tasks.update") {
-    const input = z.object({ taskId: id, title: z.string().trim().min(1).max(300).optional(), description: z.string().max(30000).optional(), status: taskStatus.optional(), priority: taskPriority.optional(), assigneeId: id.nullable().optional(), milestoneId: id.nullable().optional(), initiativeId: id.nullable().optional(), dueDate: z.iso.date().nullable().optional(), progress: z.number().int().min(0).max(100).optional() }).strict().parse(raw); await taskAccess(db, userId, input.taskId)
-    const { taskId, assigneeId, milestoneId, initiativeId, dueDate, ...changes } = input; const patch = { ...changes, ...(assigneeId !== undefined && { assignee_id: assigneeId }), ...(milestoneId !== undefined && { milestone_id: milestoneId }), ...(initiativeId !== undefined && { initiative_id: initiativeId }), ...(dueDate !== undefined && { due_date: dueDate }), updated_at: new Date().toISOString() }; const { data, error } = await db.from("tasks").update(patch).eq("id", taskId).select().single(); if (error) throw error; return data
+    const input = z.object({ taskId: id, title: z.string().trim().min(1).max(300).optional(), description: z.string().max(30000).optional(), status: taskStatus.optional(), priority: taskPriority.optional(), listId: id.nullable().optional(), assigneeId: id.nullable().optional(), milestoneId: id.nullable().optional(), initiativeId: id.nullable().optional(), dueDate: z.iso.date().nullable().optional(), progress: z.number().int().min(0).max(100).optional() }).strict().parse(raw); await taskAccess(db, userId, input.taskId)
+    const { taskId, assigneeId, milestoneId, initiativeId, listId, dueDate, ...changes } = input; const patch = { ...changes, ...(assigneeId !== undefined && { assignee_id: assigneeId }), ...(milestoneId !== undefined && { milestone_id: milestoneId }), ...(initiativeId !== undefined && { initiative_id: initiativeId }), ...(listId !== undefined && { list_id: listId }), ...(dueDate !== undefined && { due_date: dueDate }), updated_at: new Date().toISOString() }; const { data, error } = await db.from("tasks").update(patch).eq("id", taskId).select().single(); if (error) throw error; return data
   }
   if (operation === "tasks.comment") { const input = z.object({ taskId: id, body: z.string().trim().min(1).max(20000) }).strict().parse(raw); await taskAccess(db, userId, input.taskId); const { data, error } = await db.from("task_comments").insert({ task_id: input.taskId, author_id: userId, body: input.body }).select().single(); if (error) throw error; return data }
+
+  if (operation === "checklist.list") {
+    const input = z.object({ taskId: id }).strict().parse(raw)
+    await taskAccess(db, userId, input.taskId)
+    const { data, error } = await db
+      .from("task_checklist_items")
+      .select("*")
+      .eq("task_id", input.taskId)
+      .order("position", { ascending: true })
+    if (error) throw error
+    return data ?? []
+  }
+  if (operation === "checklist.add") {
+    const input = z.object({ taskId: id, title: z.string().trim().min(1).max(500) }).strict().parse(raw)
+    await taskAccess(db, userId, input.taskId)
+    const { data: existing } = await db
+      .from("task_checklist_items")
+      .select("position")
+      .eq("task_id", input.taskId)
+      .order("position", { ascending: false })
+      .limit(1)
+    const position = (existing?.[0]?.position ?? -1) + 1
+    const { data, error } = await db
+      .from("task_checklist_items")
+      .insert({ task_id: input.taskId, title: input.title, position })
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  }
+  if (operation === "checklist.toggle") {
+    const input = z.object({ itemId: id, completed: z.boolean() }).strict().parse(raw)
+    const { data: item, error: itemError } = await db
+      .from("task_checklist_items")
+      .select("id, task_id")
+      .eq("id", input.itemId)
+      .maybeSingle()
+    if (itemError || !item) throw Object.assign(new Error("Checklist item not found."), { status: 404 })
+    await taskAccess(db, userId, item.task_id)
+    const { data, error } = await db
+      .from("task_checklist_items")
+      .update({
+        completed: input.completed,
+        completed_by: input.completed ? userId : null,
+        completed_at: input.completed ? new Date().toISOString() : null,
+      })
+      .eq("id", input.itemId)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  }
   if (operation === "assignments.delegate") { const input = z.object({ taskId: id, assigneeId: id, note: z.string().max(5000).optional() }).strict().parse(raw); const { access } = await taskAccess(db, userId, input.taskId); const { data: member } = await db.from("project_members").select("id").eq("project_id", access.project.id).eq("user_id", input.assigneeId).maybeSingle(); if (!member) throw Object.assign(new Error("Assignee is not a project member."), { status: 422 }); const { data, error } = await db.from("tasks").update({ assignee_id: input.assigneeId, updated_at: new Date().toISOString() }).eq("id", input.taskId).select().single(); if (error) throw error; if (input.note) await db.from("task_comments").insert({ task_id: input.taskId, author_id: userId, body: input.note }); return data }
 
   if (operation === "team.list") {

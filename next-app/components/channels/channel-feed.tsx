@@ -1,6 +1,7 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react"
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 
 import { postChannelMessage } from "@/lib/actions/channels"
 import type { ChannelMessageNode, ChannelWithMessageTree } from "@/lib/auth/channels-context"
@@ -9,6 +10,13 @@ import { ChannelMessageItem } from "@/components/channels/channel-message-item"
 import { MentionTextarea } from "@/components/channels/mention-textarea"
 import { Button } from "@/components/ui/button"
 import { useDraftComposer } from "@/hooks/use-draft-composer"
+import {
+  getJobsForMessage,
+  isAgentJobActive,
+  isAgentJobTerminal,
+  useChannelAgentsLive,
+  type ChannelAgentJob,
+} from "@/hooks/use-channel-agents-live"
 import type { AgentName } from "@/lib/utils/mentions"
 import { parseAgentMentions } from "@/lib/utils/mentions"
 
@@ -25,17 +33,69 @@ function messageHasAgentReplies(message: ChannelMessageNode, agents: AgentName[]
   return agents.every((agent) => message.replies.some((reply) => reply.agent_name === agent))
 }
 
-function derivePendingAgents(messages: ChannelMessageNode[]) {
+function derivePendingAgents(
+  messages: ChannelMessageNode[],
+  agentJobs: ChannelAgentJob[]
+) {
   const pending: Record<string, AgentName[]> = {}
 
   for (const message of messages) {
     const agents = parseAgentMentions(message.body)
-    if (agents.length > 0 && !messageHasAgentReplies(message, agents)) {
-      pending[message.id] = agents
+    if (agents.length === 0) {
+      continue
+    }
+
+    const messageJobs = getJobsForMessage(agentJobs, message.id)
+    const stillPending = agents.filter((agent) => {
+      const job = messageJobs.find((item) => item.agent_name === agent)
+
+      if (agent === "personal" && job) {
+        if (isAgentJobActive(job)) {
+          return true
+        }
+        if (isAgentJobTerminal(job)) {
+          return false
+        }
+      }
+
+      return !messageHasAgentReplies(message, [agent])
+    })
+
+    if (stillPending.length > 0) {
+      pending[message.id] = stillPending
     }
   }
 
   return pending
+}
+
+function deriveFailedAgents(
+  messages: ChannelMessageNode[],
+  agentJobs: ChannelAgentJob[]
+) {
+  const failed: Record<string, { agent: AgentName; error: string }> = {}
+
+  for (const message of messages) {
+    const hasFailureReply = message.replies.some(
+      (reply) =>
+        reply.agent_name === "personal" &&
+        /could not complete the job/i.test(reply.body)
+    )
+    if (hasFailureReply) {
+      continue
+    }
+
+    for (const job of getJobsForMessage(agentJobs, message.id)) {
+      if (job.status === "failed") {
+        failed[message.id] = {
+          agent: job.agent_name,
+          error: job.error?.trim() || "Codex failed without details.",
+        }
+      }
+    }
+  }
+
+  return failed
 }
 
 export function ChannelFeed({
@@ -46,15 +106,30 @@ export function ChannelFeed({
   members,
   canEdit,
 }: ChannelFeedProps) {
+  const router = useRouter()
   const [state, formAction, pending] = useActionState(postChannelMessage, {})
   const formRef = useRef<HTMLFormElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const submitBodyRef = useRef<string | null>(null)
   const [optimisticPending, setOptimisticPending] = useState<Record<string, AgentName[]>>({})
 
+  const refreshChannel = useCallback(() => {
+    router.refresh()
+  }, [router])
+
+  const { jobs: agentJobs, hasActiveJobs } = useChannelAgentsLive({
+    channelId: channel.id,
+    onJobsChange: refreshChannel,
+  })
+
   const derivedPending = useMemo(
-    () => derivePendingAgents(channel.messages),
-    [channel.messages]
+    () => derivePendingAgents(channel.messages, agentJobs),
+    [agentJobs, channel.messages]
+  )
+
+  const failedAgents = useMemo(
+    () => deriveFailedAgents(channel.messages, agentJobs),
+    [agentJobs, channel.messages]
   )
 
   const pendingAgents = useMemo(
@@ -87,7 +162,27 @@ export function ChannelFeed({
   })
 
   const { clearDraft } = draft
-  const hasPendingAgents = Object.keys(pendingAgents).length > 0
+  const hasPendingAgents = Object.keys(pendingAgents).length > 0 || hasActiveJobs
+
+  useEffect(() => {
+    if (state.success) {
+      router.refresh()
+    }
+  }, [router, state.success])
+
+  useEffect(() => {
+    if (!hasPendingAgents) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      router.refresh()
+    }, 3000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [hasPendingAgents, router])
 
   useEffect(() => {
     if (state.success && state.messageId && submitBodyRef.current) {
@@ -111,14 +206,11 @@ export function ChannelFeed({
       let changed = false
 
       for (const messageId of Object.keys(current)) {
-        if (derivedPending[messageId]) {
+        if (derivedPending[messageId]?.length) {
           continue
         }
-        const message = channel.messages.find((item) => item.id === messageId)
-        if (message && messageHasAgentReplies(message, current[messageId] ?? [])) {
-          delete next[messageId]
-          changed = true
-        }
+        delete next[messageId]
+        changed = true
       }
 
       return changed ? next : current
@@ -163,6 +255,7 @@ export function ChannelFeed({
                 members={members}
                 canEdit={canEdit}
                 pendingAgents={pendingAgents[message.id] ?? []}
+                failedAgent={failedAgents[message.id] ?? null}
               />
             ))
           )}

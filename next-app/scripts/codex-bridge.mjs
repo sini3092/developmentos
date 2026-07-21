@@ -186,6 +186,29 @@ async function apiRequest(url, token, path, init = {}) {
   return data
 }
 
+function quoteWindowsArg(value) {
+  const arg = String(value)
+  if (!/[\s"&|<>^%!]/.test(arg)) {
+    return arg
+  }
+  return `"${arg.replace(/"/g, '""')}"`
+}
+
+function spawnCodex(cmd, args, options) {
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd)) {
+    const commandLine = [quoteWindowsArg(cmd), ...args.map(quoteWindowsArg)].join(" ")
+    return spawn("cmd.exe", ["/d", "/s", "/c", commandLine], {
+      ...options,
+      shell: false,
+    })
+  }
+
+  return spawn(cmd, args, {
+    ...options,
+    shell: false,
+  })
+}
+
 function buildCodexArgs(settings, prompt) {
   const args = []
 
@@ -207,12 +230,10 @@ function buildCodexArgs(settings, prompt) {
 
 function runCodex(cmd, cwd, settings, prompt, onProgress) {
   const args = buildCodexArgs(settings, prompt)
-  const useShell = process.platform === "win32" && !cmd.toLowerCase().endsWith(".exe")
 
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(cmd, args, {
+    const child = spawnCodex(cmd, args, {
       cwd,
-      shell: useShell,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
     })
@@ -260,6 +281,27 @@ async function patchJob(url, token, jobId, body) {
   })
 }
 
+function buildPromptWithContext(job) {
+  const userPrompt = String(job.prompt ?? "").trim()
+  const context = String(job.project_context ?? "").trim()
+
+  if (!context) {
+    return userPrompt
+  }
+
+  return [
+    context,
+    "",
+    "---",
+    "",
+    "User request from DevelopmentOS channel:",
+    userPrompt,
+    "",
+    "You are Personal (Codex) for this DevelopmentOS project. Use the context above.",
+    "If DevelopmentOS MCP tools are configured, prefer them for reading/updating tasks, board lists, and checklists.",
+  ].join("\n")
+}
+
 async function processJob(options, job, settings) {
   const cwd = settings?.codex_workspace_path
     ? resolve(settings.codex_workspace_path)
@@ -298,7 +340,7 @@ async function processJob(options, job, settings) {
       codexCmd,
       cwd,
       settings,
-      job.prompt,
+      buildPromptWithContext(job),
       async (preview) => {
         try {
           await patchJob(options.url, options.token, job.id, {
@@ -322,6 +364,9 @@ async function processJob(options, job, settings) {
       message =
         "Codex CLI not found. Install with: npm install -g @openai/codex — then restart the bridge. " +
         "The Codex desktop app alone is not enough for @personal."
+    } else if (/unexpected argument/i.test(message)) {
+      message =
+        `${message} This often happens when a multi-word prompt was split by Windows. Restart the bridge after updating — if it persists, try a shorter prompt or disable resume-last in Settings.`
     }
     await patchJob(options.url, options.token, job.id, {
       status: "failed",

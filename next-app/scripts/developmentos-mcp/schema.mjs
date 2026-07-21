@@ -4,6 +4,7 @@ export const object = (properties = {}, required = []) => ({
 export const string = (description, extra = {}) => ({ type: "string", description, ...extra })
 export const nullableString = (description) => ({ type: ["string", "null"], description })
 export const integer = (description, extra = {}) => ({ type: "integer", description, ...extra })
+export const boolean = (description, extra = {}) => ({ type: "boolean", description, ...extra })
 export const enumString = (description, values) => ({ type: "string", description, enum: values })
 
 export function assertInput(schema, input) {
