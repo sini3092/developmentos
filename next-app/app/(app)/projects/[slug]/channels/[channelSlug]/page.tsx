@@ -40,14 +40,16 @@ export default async function ChannelPage({ params }: ChannelPageProps) {
   const channel = await requireChannel(project.id, channelSlug)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <PageHeader
-        title="Channels"
-        description={`Team discussion for ${project.name}`}
-        icon={MessageSquare}
-      />
-      <ProjectNav slug={slug} canManage={canManage} />
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0">
+        <PageHeader
+          title="Channels"
+          description={`Team discussion for ${project.name}`}
+          icon={MessageSquare}
+        />
+        <ProjectNav slug={slug} canManage={canManage} />
+      </div>
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <ChannelSidebar slug={slug} channels={channels} activeChannelSlug={channelSlug} />
         <ChannelFeed
           channel={channel}

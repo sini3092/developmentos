@@ -255,7 +255,7 @@ export function ChannelFeed({
   }, [liveMessages.length, hasPendingAgents])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden">
       <header className="shrink-0 border-b border-border/60 px-6 py-4">
         <div>
           <h2 className="text-lg font-semibold">{channel.name}</h2>
@@ -268,8 +268,9 @@ export function ChannelFeed({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           ref={messagesScrollRef}
-          className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-6"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6"
         >
+          <div className="space-y-4">
           {liveMessages.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/80 bg-surface-raised/50 p-10 text-center">
               <h3 className="text-sm font-medium">No messages yet</h3>
@@ -295,6 +296,7 @@ export function ChannelFeed({
               />
             ))
           )}
+          </div>
         </div>
 
         {canEdit ? (
