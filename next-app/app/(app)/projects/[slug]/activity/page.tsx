@@ -75,7 +75,7 @@ export default async function ActivityPage({ params }: ActivityPageProps) {
             <BarChart3 className="size-4 text-muted-foreground" />
             <h2 className="text-sm font-medium">Activity timeline</h2>
           </div>
-          <ActivityTimeline events={analytics.activity} />
+          <ActivityTimeline slug={slug} events={analytics.activity} />
         </section>
       </div>
     </div>

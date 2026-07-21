@@ -10,9 +10,10 @@ import {
 
 type ActivityFeedProps = {
   events: ActivityEvent[]
+  projectSlugs?: Record<string, string>
 }
 
-export function ActivityFeed({ events }: ActivityFeedProps) {
+export function ActivityFeed({ events, projectSlugs = {} }: ActivityFeedProps) {
   if (events.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-border/80 bg-surface-raised/50 px-4 py-8 text-center text-sm text-muted-foreground">
@@ -25,9 +26,30 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
     <div className="space-y-2">
       {events.map((event) => {
         if (isGithubActivityEvent(event.event_type)) {
+          const slug = event.project_id ? projectSlugs[event.project_id] : undefined
+          if (!slug) {
+            return (
+              <div
+                key={event.id}
+                className="rounded-xl border border-border/60 bg-card px-4 py-3 text-sm shadow-xs"
+              >
+                <p className="text-xs font-medium text-muted-foreground">
+                  {formatActivityEventType(event.event_type)}
+                </p>
+                <p>
+                  {formatActivityEventMessage(event.event_type, event.message, event.new_value)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {new Date(event.created_at).toLocaleString()}
+                </p>
+              </div>
+            )
+          }
+
           return (
             <GithubActivityEventRow
               key={event.id}
+              slug={slug}
               eventType={event.event_type}
               message={event.message}
               newValue={event.new_value}

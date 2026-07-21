@@ -98,6 +98,10 @@ export async function processGithubPushEvent(
         : null,
       compare_url: payload.compare ?? null,
       repository_url: payload.repository.html_url,
+      before_sha: payload.before ?? null,
+      after_sha: payload.after ?? null,
+      repo_owner: repo.owner,
+      repo_name: repo.name,
     },
     p_message: summaryMessage,
   })
@@ -140,6 +144,10 @@ export async function processGithubPushEvent(
           : null,
         compare_url: payload.compare ?? null,
         repository_url: payload.repository.html_url,
+        before_sha: payload.before ?? null,
+        after_sha: payload.after ?? null,
+        repo_owner: repo.owner,
+        repo_name: repo.name,
       },
       p_message:
         latestCommit && commitCount === 1

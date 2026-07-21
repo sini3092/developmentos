@@ -14,6 +14,7 @@ import { getInitials } from "@/lib/utils/format"
 import { cn } from "@/lib/utils"
 
 type GithubActivityEventRowProps = {
+  slug: string
   eventType: string
   message: string | null
   newValue: unknown
@@ -24,6 +25,7 @@ type GithubActivityEventRowProps = {
 }
 
 export function GithubActivityEventRow({
+  slug,
   eventType,
   message,
   newValue,
@@ -101,6 +103,7 @@ export function GithubActivityEventRow({
       <GithubEventDetailDialog
         open={open}
         onOpenChange={setOpen}
+        slug={slug}
         eventType={eventType}
         message={message}
         newValue={newValue}

@@ -148,7 +148,7 @@ export default async function HomePage() {
               <Activity className="size-4 text-muted-foreground" />
               Team Activity
             </h2>
-            <ActivityFeed events={dashboard.activity} />
+            <ActivityFeed events={dashboard.activity} projectSlugs={dashboard.projectSlugs} />
           </section>
 
           <section className="space-y-4">

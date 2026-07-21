@@ -13,6 +13,10 @@ export type GithubActivityValue = {
   commits?: GithubCommitSummary[]
   compare_url?: string | null
   repository_url?: string
+  before_sha?: string | null
+  after_sha?: string | null
+  repo_owner?: string
+  repo_name?: string
   action?: string
   pr_number?: number
   pr_title?: string
@@ -84,6 +88,25 @@ export function getGithubCommits(value: GithubActivityValue | null) {
   }
 
   return []
+}
+
+export function getGithubRepoFromValue(value: GithubActivityValue | null) {
+  if (!value) {
+    return { owner: "", repo: "" }
+  }
+
+  if (value.repo_owner && value.repo_name) {
+    return { owner: value.repo_owner, repo: value.repo_name }
+  }
+
+  if (value.repository_url) {
+    const match = value.repository_url.match(/github\.com\/([^/]+)\/([^/]+)/i)
+    if (match) {
+      return { owner: match[1], repo: match[2].replace(/\.git$/, "") }
+    }
+  }
+
+  return { owner: "", repo: "" }
 }
 
 export function formatCommitSha(commitId: string) {

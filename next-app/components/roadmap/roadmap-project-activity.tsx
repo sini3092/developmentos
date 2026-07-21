@@ -28,6 +28,7 @@ export function RoadmapProjectActivity({ items, slug }: RoadmapProjectActivityPr
           return (
             <GithubActivityEventRow
               key={item.id}
+              slug={slug}
               eventType={item.event.event_type}
               message={item.event.message}
               newValue={item.event.new_value}
@@ -113,6 +114,7 @@ export function RoadmapGithubSection({
           item.kind === "github" ? (
             <GithubActivityEventRow
               key={item.id}
+              slug={slug}
               eventType={item.event.event_type}
               message={item.event.message}
               newValue={item.event.new_value}

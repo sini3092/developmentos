@@ -12,10 +12,11 @@ import { Badge } from "@/components/ui/badge"
 import { getInitials } from "@/lib/utils/format"
 
 type ActivityTimelineProps = {
+  slug: string
   events: ProjectAnalytics["activity"]
 }
 
-export function ActivityTimeline({ events }: ActivityTimelineProps) {
+export function ActivityTimeline({ slug, events }: ActivityTimelineProps) {
   if (events.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-border/80 bg-surface-raised/50 px-4 py-8 text-center text-sm text-muted-foreground">
@@ -31,6 +32,7 @@ export function ActivityTimeline({ events }: ActivityTimelineProps) {
           return (
             <GithubActivityEventRow
               key={event.id}
+              slug={slug}
               eventType={event.event_type}
               message={event.message}
               newValue={event.new_value}

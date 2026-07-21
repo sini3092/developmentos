@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from "node:crypto"
 
 export type GithubPushPayload = {
   ref: string
+  before?: string
+  after?: string
   compare?: string
   repository: {
     full_name: string

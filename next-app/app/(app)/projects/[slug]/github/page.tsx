@@ -44,7 +44,7 @@ export default async function ProjectGithubPage({ params }: GithubPageProps) {
           </p>
         )}
 
-        <GithubHistoryList events={events} />
+        <GithubHistoryList slug={slug} events={events} />
       </div>
     </div>
   )

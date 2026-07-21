@@ -33,6 +33,7 @@ export type DashboardData = {
   focusTasks: TaskWithProject[]
   blockedTasks: TaskWithProject[]
   activity: ActivityEvent[]
+  projectSlugs: Record<string, string>
   roadmap: RoadmapSnapshotItem[]
 }
 
@@ -136,6 +137,7 @@ export async function getDashboardData(workspaceId: string, userId: string) {
     focusTasks: [],
     blockedTasks: [],
     activity: [],
+    projectSlugs: {},
     roadmap: [],
   }
 
@@ -253,6 +255,9 @@ export async function getDashboardData(workspaceId: string, userId: string) {
     focusTasks,
     blockedTasks,
     activity: activity ?? [],
+    projectSlugs: Object.fromEntries(
+      [...projectMap.entries()].map(([id, project]) => [id, project.slug])
+    ),
     roadmap,
   }
 }
