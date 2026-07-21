@@ -236,12 +236,28 @@ export function KanbanBoard({
         }}
       >
         <SortableContext items={listSortableIds} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {board.lists.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border/80 bg-surface-raised/40 p-10 text-center">
+              <h2 className="text-sm font-medium">Your board is empty</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Create your first list — for example Bugs, Roadmap, or Current work — then add cards
+                inside it.
+              </p>
+              {canEdit ? (
+                <div className="mx-auto mt-6 max-w-sm">
+                  <AddBoardList slug={slug} projectId={projectId} canEdit={canEdit} inline />
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {board.lists.map((list) => (
               <BoardListColumn
                 key={list.id}
                 list={list}
                 tasks={board.tasksByList[list.id] ?? []}
+                allLists={board.lists}
+                projectId={projectId}
                 slug={slug}
                 canEdit={canEdit}
                 onOpenTask={openTask}
@@ -255,6 +271,7 @@ export function KanbanBoard({
             ))}
             <AddBoardList slug={slug} projectId={projectId} canEdit={canEdit} />
           </div>
+          )}
         </SortableContext>
 
         <DragOverlay>

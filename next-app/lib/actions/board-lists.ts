@@ -78,8 +78,24 @@ export async function reorderBoardLists(slug: string, listIds: string[]) {
   return { success: true }
 }
 
-export async function deleteBoardList(slug: string, listId: string, moveToListId: string) {
+export async function deleteBoardList(
+  slug: string,
+  projectId: string,
+  listId: string,
+  moveToListId?: string | null
+) {
   const supabase = await createClient()
+
+  const { data: list } = await supabase
+    .from("board_lists")
+    .select("id")
+    .eq("id", listId)
+    .eq("project_id", projectId)
+    .maybeSingle()
+
+  if (!list) {
+    return { error: "List not found." }
+  }
 
   const { data: tasks } = await supabase
     .from("tasks")
@@ -87,15 +103,44 @@ export async function deleteBoardList(slug: string, listId: string, moveToListId
     .eq("list_id", listId)
     .is("deleted_at", null)
 
-  if (tasks?.length) {
-    const { error: moveError } = await supabase
-      .from("tasks")
-      .update({ list_id: moveToListId })
-      .eq("list_id", listId)
-      .is("deleted_at", null)
+  const taskCount = tasks?.length ?? 0
 
-    if (moveError) {
-      return { error: moveError.message }
+  if (taskCount > 0) {
+    if (moveToListId) {
+      if (moveToListId === listId) {
+        return { error: "Choose a different list to move cards to." }
+      }
+
+      const { data: targetList } = await supabase
+        .from("board_lists")
+        .select("id")
+        .eq("id", moveToListId)
+        .eq("project_id", projectId)
+        .maybeSingle()
+
+      if (!targetList) {
+        return { error: "Target list not found." }
+      }
+
+      const { error: moveError } = await supabase
+        .from("tasks")
+        .update({ list_id: moveToListId })
+        .eq("list_id", listId)
+        .is("deleted_at", null)
+
+      if (moveError) {
+        return { error: moveError.message }
+      }
+    } else {
+      const { error: archiveError } = await supabase
+        .from("tasks")
+        .update({ deleted_at: new Date().toISOString(), list_id: null })
+        .eq("list_id", listId)
+        .is("deleted_at", null)
+
+      if (archiveError) {
+        return { error: archiveError.message }
+      }
     }
   }
 
@@ -106,5 +151,6 @@ export async function deleteBoardList(slug: string, listId: string, moveToListId
   }
 
   revalidatePath(`/projects/${slug}/tasks/board`)
+  revalidatePath(`/projects/${slug}/roadmap`)
   return { success: true }
 }

@@ -171,7 +171,7 @@ export function TaskFiltersBar({
             ))}
           </select>
         ) : null}
-        {canEdit ? (
+        {canEdit && lists.length > 0 ? (
           <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
             <DialogTrigger asChild>
               <Button id="board-create-task-trigger" size="sm">
@@ -196,6 +196,9 @@ export function TaskFiltersBar({
               />
             </DialogContent>
           </Dialog>
+        ) : null}
+        {canEdit && lists.length === 0 ? (
+          <span className="text-xs text-muted-foreground">Create a list before adding cards</span>
         ) : null}
       </div>
     </div>
