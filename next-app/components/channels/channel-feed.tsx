@@ -200,11 +200,6 @@ export function ChannelFeed({
     [liveMessages]
   )
 
-  useEffect(() => {
-    initialScrollDoneRef.current = false
-    shouldAutoScrollRef.current = true
-  }, [channel.id])
-
   useLayoutEffect(() => {
     const container = messagesScrollRef.current
     if (!container) {
