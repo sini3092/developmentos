@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useActionState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { postChannelMessage } from "@/lib/actions/channels"
@@ -201,6 +201,28 @@ export function ChannelFeed({
   )
 
   useEffect(() => {
+    initialScrollDoneRef.current = false
+    shouldAutoScrollRef.current = true
+  }, [channel.id])
+
+  useLayoutEffect(() => {
+    const container = messagesScrollRef.current
+    if (!container) {
+      return
+    }
+
+    shouldAutoScrollRef.current = true
+
+    const scrollToLatest = () => scrollContainerToBottom(container, "auto")
+
+    scrollToLatest()
+    requestAnimationFrame(() => {
+      scrollToLatest()
+      requestAnimationFrame(scrollToLatest)
+    })
+  }, [channel.id])
+
+  useEffect(() => {
     const container = messagesScrollRef.current
     if (!container) {
       return
@@ -210,7 +232,6 @@ export function ChannelFeed({
       shouldAutoScrollRef.current = isContainerNearBottom(container)
     }
 
-    onScroll()
     container.addEventListener("scroll", onScroll, { passive: true })
     return () => {
       container.removeEventListener("scroll", onScroll)
