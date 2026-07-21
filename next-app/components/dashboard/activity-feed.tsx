@@ -1,8 +1,11 @@
+"use client"
+
 import type { ActivityEvent } from "@/lib/database.types"
+import { GithubActivityEventRow } from "@/components/github/github-activity-event-row"
 import {
   formatActivityEventMessage,
   formatActivityEventType,
-  getActivityEventUrl,
+  isGithubActivityEvent,
 } from "@/lib/utils/activity"
 
 type ActivityFeedProps = {
@@ -21,9 +24,24 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
   return (
     <div className="space-y-2">
       {events.map((event) => {
-        const url = getActivityEventUrl(event.event_type, event.new_value)
-        const content = (
-          <>
+        if (isGithubActivityEvent(event.event_type)) {
+          return (
+            <GithubActivityEventRow
+              key={event.id}
+              eventType={event.event_type}
+              message={event.message}
+              newValue={event.new_value}
+              createdAt={event.created_at}
+              compact
+            />
+          )
+        }
+
+        return (
+          <div
+            key={event.id}
+            className="rounded-xl border border-border/60 bg-card px-4 py-3 text-sm shadow-xs"
+          >
             <p className="text-xs font-medium text-muted-foreground">
               {formatActivityEventType(event.event_type)}
             </p>
@@ -31,25 +49,6 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
             <p className="mt-1 text-xs text-muted-foreground">
               {new Date(event.created_at).toLocaleString()}
             </p>
-          </>
-        )
-
-        return url ? (
-          <a
-            key={event.id}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="block rounded-xl border border-border/60 bg-card px-4 py-3 text-sm shadow-xs transition-colors hover:border-info/40 hover:bg-info/5"
-          >
-            {content}
-          </a>
-        ) : (
-          <div
-            key={event.id}
-            className="rounded-xl border border-border/60 bg-card px-4 py-3 text-sm shadow-xs"
-          >
-            {content}
           </div>
         )
       })}

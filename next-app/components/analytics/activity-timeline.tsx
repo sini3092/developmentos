@@ -1,8 +1,11 @@
+"use client"
+
 import type { ProjectAnalytics } from "@/lib/auth/analytics-context"
+import { GithubActivityEventRow } from "@/components/github/github-activity-event-row"
 import {
   formatActivityEventMessage,
   formatActivityEventType,
-  getActivityEventUrl,
+  isGithubActivityEvent,
 } from "@/lib/utils/activity"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -24,22 +27,36 @@ export function ActivityTimeline({ events }: ActivityTimelineProps) {
   return (
     <div className="space-y-3">
       {events.map((event) => {
-        const url = getActivityEventUrl(event.event_type, event.new_value)
-        const content = (
-          <>
+        if (isGithubActivityEvent(event.event_type)) {
+          return (
+            <GithubActivityEventRow
+              key={event.id}
+              eventType={event.event_type}
+              message={event.message}
+              newValue={event.new_value}
+              createdAt={event.created_at}
+              actorDisplayName={
+                event.actor?.display_name ??
+                (event.event_type.startsWith("github.") ? "GitHub" : undefined)
+              }
+            />
+          )
+        }
+
+        return (
+          <article
+            key={event.id}
+            className="flex gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-xs"
+          >
             <Avatar className="size-8 rounded-md">
               <AvatarFallback className="rounded-md text-xs">
-                {getInitials(
-                  event.actor?.display_name,
-                  event.event_type.startsWith("github.") ? "GH" : "?"
-                )}
+                {getInitials(event.actor?.display_name, "?")}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium">
-                  {event.actor?.display_name ??
-                    (event.event_type.startsWith("github.") ? "GitHub" : "System")}
+                  {event.actor?.display_name ?? "System"}
                 </span>
                 <Badge variant="outline" className="font-normal">
                   {formatActivityEventType(event.event_type)}
@@ -50,28 +67,8 @@ export function ActivityTimeline({ events }: ActivityTimelineProps) {
               </p>
               <p className="text-xs text-muted-foreground">
                 {new Date(event.created_at).toLocaleString()}
-                {url ? " · View on GitHub" : ""}
               </p>
             </div>
-          </>
-        )
-
-        return url ? (
-          <a
-            key={event.id}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="flex gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-xs transition-colors hover:border-info/40 hover:bg-info/5"
-          >
-            {content}
-          </a>
-        ) : (
-          <article
-            key={event.id}
-            className="flex gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-xs"
-          >
-            {content}
           </article>
         )
       })}

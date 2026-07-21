@@ -1,12 +1,7 @@
+"use client"
+
 import type { GithubHistoryEvent } from "@/lib/auth/github-history-context"
-import {
-  formatActivityEventMessage,
-  formatActivityEventType,
-  getActivityEventUrl,
-} from "@/lib/utils/activity"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { getInitials } from "@/lib/utils/format"
+import { GithubActivityEventRow } from "@/components/github/github-activity-event-row"
 
 type GithubHistoryListProps = {
   events: GithubHistoryEvent[]
@@ -23,54 +18,16 @@ export function GithubHistoryList({ events }: GithubHistoryListProps) {
 
   return (
     <div className="space-y-3">
-      {events.map((event) => {
-        const url = getActivityEventUrl(event.event_type, event.new_value)
-        const content = (
-          <>
-            <Avatar className="size-8 rounded-md">
-              <AvatarFallback className="rounded-md text-xs">
-                {getInitials(event.actor?.display_name, "GH")}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">
-                  {event.actor?.display_name ?? "GitHub"}
-                </span>
-                <Badge variant="outline" className="font-normal">
-                  {formatActivityEventType(event.event_type)}
-                </Badge>
-              </div>
-              <p className="text-sm">
-                {formatActivityEventMessage(event.event_type, event.message, event.new_value)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {new Date(event.created_at).toLocaleString()}
-                {url ? " · Click to view changes on GitHub" : ""}
-              </p>
-            </div>
-          </>
-        )
-
-        return url ? (
-          <a
-            key={event.id}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="flex gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-xs transition-colors hover:border-info/40 hover:bg-info/5"
-          >
-            {content}
-          </a>
-        ) : (
-          <article
-            key={event.id}
-            className="flex gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-xs"
-          >
-            {content}
-          </article>
-        )
-      })}
+      {events.map((event) => (
+        <GithubActivityEventRow
+          key={event.id}
+          eventType={event.event_type}
+          message={event.message}
+          newValue={event.new_value}
+          createdAt={event.created_at}
+          actorDisplayName={event.actor?.display_name}
+        />
+      ))}
     </div>
   )
 }

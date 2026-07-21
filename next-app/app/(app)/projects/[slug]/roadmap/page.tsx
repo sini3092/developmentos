@@ -3,9 +3,9 @@ import { BarChart3 } from "lucide-react"
 
 import { PageHeader } from "@/components/layout/page-header"
 import { ProjectNav } from "@/components/projects/project-nav"
-import { RoadmapBoard } from "@/components/roadmap/roadmap-board"
+import { ProjectRoadmap } from "@/components/roadmap/project-roadmap"
 import { requireProject } from "@/lib/auth/project-context"
-import { getProjectInitiatives } from "@/lib/auth/roadmap-context"
+import { getProjectRoadmapView } from "@/lib/auth/project-roadmap-context"
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context"
 
 type RoadmapPageProps = {
@@ -16,7 +16,7 @@ export default async function RoadmapPage({ params }: RoadmapPageProps) {
   const { slug } = await params
   const workspaceContext = await requireWorkspaceContext()
   const { project, members, canManage, currentMembership } = await requireProject(slug)
-  const initiatives = await getProjectInitiatives(project.id)
+  const view = await getProjectRoadmapView(project.id)
 
   const canEdit =
     canManage ||
@@ -26,24 +26,24 @@ export default async function RoadmapPage({ params }: RoadmapPageProps) {
     <div className="flex flex-1 flex-col">
       <PageHeader
         title="Roadmap"
-        description={`Strategic initiatives for ${project.name}`}
+        description={`Live project overview for ${project.name} — tasks, GitHub pushes, and what remains`}
         icon={BarChart3}
       >
         <Link
-          href={`/projects/${slug}/milestones`}
+          href={`/projects/${slug}/tasks/board`}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          View milestones →
+          Open task board →
         </Link>
       </PageHeader>
 
       <ProjectNav slug={slug} canManage={canManage} />
 
-      <RoadmapBoard
+      <ProjectRoadmap
         workspaceId={workspaceContext.activeWorkspace!.id}
         projectId={project.id}
         slug={slug}
-        initiatives={initiatives}
+        view={view}
         members={members}
         canEdit={canEdit}
       />

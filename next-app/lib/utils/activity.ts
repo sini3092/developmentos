@@ -1,3 +1,25 @@
+export type GithubCommitSummary = {
+  id: string
+  message: string
+  url?: string
+  author?: string
+}
+
+export type GithubActivityValue = {
+  branch_name?: string
+  commit_count?: number
+  pusher?: string
+  latest_commit?: GithubCommitSummary | null
+  commits?: GithubCommitSummary[]
+  compare_url?: string | null
+  repository_url?: string
+  action?: string
+  pr_number?: number
+  pr_title?: string
+  pr_state?: string
+  pr_url?: string
+}
+
 const EVENT_LABELS: Record<string, string> = {
   "task.created": "Task created",
   "task.updated": "Task updated",
@@ -36,17 +58,42 @@ export function formatActivityEventMessage(
   return "Project activity recorded."
 }
 
-export function getActivityEventUrl(eventType: string, newValue: unknown) {
+export function parseGithubActivityValue(newValue: unknown): GithubActivityValue | null {
   if (!newValue || typeof newValue !== "object") {
     return null
   }
 
-  const value = newValue as {
-    latest_commit?: { url?: string }
-    compare_url?: string | null
-    pr_url?: string
-    repository_url?: string
-    branch_name?: string
+  return newValue as GithubActivityValue
+}
+
+export function isGithubActivityEvent(eventType: string) {
+  return eventType.startsWith("github.")
+}
+
+export function getGithubCommits(value: GithubActivityValue | null) {
+  if (!value) {
+    return []
+  }
+
+  if (value.commits?.length) {
+    return value.commits
+  }
+
+  if (value.latest_commit) {
+    return [value.latest_commit]
+  }
+
+  return []
+}
+
+export function formatCommitSha(commitId: string) {
+  return commitId.slice(0, 7)
+}
+
+export function getActivityEventUrl(eventType: string, newValue: unknown) {
+  const value = parseGithubActivityValue(newValue)
+  if (!value) {
+    return null
   }
 
   if (eventType === "github.pull_request" && value.pr_url) {

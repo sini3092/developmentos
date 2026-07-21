@@ -5,8 +5,10 @@ import type {
   InitiativeWithOwner,
   MilestoneWithOwner,
   Profile,
+  TaskStatus,
 } from "@/lib/database.types"
 import { createClient } from "@/lib/supabase/server"
+import { buildTaskBreakdown } from "@/lib/utils/roadmap"
 
 export type RoadmapStats = {
   initiatives: number
@@ -92,7 +94,7 @@ export async function getProjectInitiatives(
     supabase.from("milestones").select("id, initiative_id").in("initiative_id", initiativeIds),
     supabase
       .from("tasks")
-      .select("id, initiative_id, status, progress")
+      .select("id, initiative_id, status, progress, identifier, title, updated_at")
       .in("initiative_id", initiativeIds)
       .is("deleted_at", null)
       .neq("status", "cancelled"),
@@ -104,6 +106,23 @@ export async function getProjectInitiatives(
     const linkedTasks = tasks?.filter((task) => task.initiative_id === initiative.id) ?? []
     const doneCount = linkedTasks.filter((task) => task.status === "done").length
     const openCount = linkedTasks.length - doneCount
+    const blockedCount = linkedTasks.filter((task) => task.status === "blocked").length
+    const breakdown = buildTaskBreakdown(linkedTasks)
+    const recentTasks = [...linkedTasks]
+      .sort((a, b) => {
+        const aDone = a.status === "done" ? 1 : 0
+        const bDone = b.status === "done" ? 1 : 0
+        if (aDone !== bDone) return aDone - bDone
+        return (b.progress ?? 0) - (a.progress ?? 0)
+      })
+      .slice(0, 3)
+      .map((task) => ({
+        id: task.id,
+        identifier: task.identifier,
+        title: task.title,
+        status: task.status,
+        progress: task.progress ?? 0,
+      }))
 
     return {
       ...initiative,
@@ -113,8 +132,50 @@ export async function getProjectInitiatives(
       task_count: linkedTasks.length,
       task_done_count: doneCount,
       task_open_count: openCount,
+      task_blocked_count: blockedCount,
+      task_status_breakdown: breakdown,
+      recent_tasks: recentTasks,
     }
   })
+}
+
+export async function getUnlinkedTaskCount(projectId: string) {
+  const supabase = await createClient()
+
+  const { count } = await supabase
+    .from("tasks")
+    .select("*", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .is("initiative_id", null)
+    .is("deleted_at", null)
+    .neq("status", "cancelled")
+
+  return count ?? 0
+}
+
+export type InitiativeLinkedTask = {
+  id: string
+  identifier: string
+  title: string
+  status: TaskStatus
+  progress: number
+  updated_at: string
+}
+
+export async function getInitiativeLinkedTasks(
+  initiativeId: string
+): Promise<InitiativeLinkedTask[]> {
+  const supabase = await createClient()
+
+  const { data } = await supabase
+    .from("tasks")
+    .select("id, identifier, title, status, progress, updated_at")
+    .eq("initiative_id", initiativeId)
+    .is("deleted_at", null)
+    .neq("status", "cancelled")
+    .order("updated_at", { ascending: false })
+
+  return data ?? []
 }
 
 export async function getInitiativeDetail(
@@ -134,7 +195,7 @@ export async function getInitiativeDetail(
     return null
   }
 
-  const [{ data: updates }, { data: milestones }, { count: taskCount }] = await Promise.all([
+  const [{ data: updates }, { data: milestones }, linkedTasks] = await Promise.all([
     supabase
       .from("initiative_updates")
       .select("*")
@@ -146,11 +207,7 @@ export async function getInitiativeDetail(
       .eq("initiative_id", initiative.id)
       .neq("status", "cancelled")
       .order("target_date", { ascending: true, nullsFirst: false }),
-    supabase
-      .from("tasks")
-      .select("*", { count: "exact", head: true })
-      .eq("initiative_id", initiative.id)
-      .is("deleted_at", null),
+    getInitiativeLinkedTasks(initiative.id),
   ])
 
   const authorIds = [...new Set(updates?.map((update) => update.author_id) ?? [])]
@@ -161,10 +218,18 @@ export async function getInitiativeDetail(
 
   const [withOwner] = await attachProfiles([initiative])
 
+  const doneCount = linkedTasks.filter((task) => task.status === "done").length
+  const breakdown = buildTaskBreakdown(linkedTasks)
+
   return {
     ...withOwner,
     milestone_count: milestones?.length ?? 0,
-    task_count: taskCount ?? 0,
+    task_count: linkedTasks.length,
+    task_done_count: doneCount,
+    task_open_count: linkedTasks.length - doneCount,
+    task_blocked_count: linkedTasks.filter((task) => task.status === "blocked").length,
+    task_status_breakdown: breakdown,
+    linked_tasks: linkedTasks,
     updates:
       updates?.map((update) => ({
         ...update,

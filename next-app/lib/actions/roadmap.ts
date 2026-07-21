@@ -89,6 +89,26 @@ export async function createInitiative(
   return { success: "Initiative created." }
 }
 
+export async function updateInitiativeHorizon(
+  initiativeId: string,
+  slug: string,
+  initiativeSlug: string,
+  planningHorizon: PlanningHorizon
+): Promise<RoadmapActionState> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("initiatives")
+    .update({ planning_horizon: planningHorizon })
+    .eq("id", initiativeId)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidateRoadmapPaths(slug, initiativeSlug)
+  return { success: "Horizon updated." }
+}
+
 export async function updateInitiative(
   _prevState: RoadmapActionState,
   formData: FormData

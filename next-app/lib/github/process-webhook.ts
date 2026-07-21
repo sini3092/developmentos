@@ -65,6 +65,12 @@ export async function processGithubPushEvent(
 
   const latestCommit = payload.commits.at(-1)
   const commitCount = payload.commits.length
+  const commits = payload.commits.slice(-20).map((commit) => ({
+    id: commit.id,
+    message: commit.message,
+    url: commit.url,
+    author: commit.author.name,
+  }))
 
   const summaryMessage =
     commitCount === 1 && latestCommit
@@ -81,6 +87,7 @@ export async function processGithubPushEvent(
       branch_name: branchName,
       commit_count: commitCount,
       pusher: payload.pusher.name,
+      commits,
       latest_commit: latestCommit
         ? {
             id: latestCommit.id,
@@ -122,13 +129,17 @@ export async function processGithubPushEvent(
       p_new_value: {
         branch_name: branchName,
         commit_count: commitCount,
+        commits,
         latest_commit: latestCommit
           ? {
               id: latestCommit.id,
               message: latestCommit.message,
               url: latestCommit.url,
+              author: latestCommit.author.name,
             }
           : null,
+        compare_url: payload.compare ?? null,
+        repository_url: payload.repository.html_url,
       },
       p_message:
         latestCommit && commitCount === 1

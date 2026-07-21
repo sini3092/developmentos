@@ -1980,11 +1980,35 @@ export type InitiativeWithOwner = Initiative & {
   task_count: number
   task_done_count?: number
   task_open_count?: number
+  task_blocked_count?: number
+  task_status_breakdown?: {
+    done: number
+    in_progress: number
+    in_review: number
+    blocked: number
+    ready: number
+    backlog: number
+  }
+  recent_tasks?: Array<{
+    id: string
+    identifier: string
+    title: string
+    status: TaskStatus
+    progress: number
+  }>
 }
 
 export type InitiativeDetail = InitiativeWithOwner & {
   updates: Array<InitiativeUpdate & { author: Profile | null }>
   milestones: Milestone[]
+  linked_tasks: Array<{
+    id: string
+    identifier: string
+    title: string
+    status: TaskStatus
+    progress: number
+    updated_at: string
+  }>
 }
 
 export type MilestoneWithOwner = Milestone & {

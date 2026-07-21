@@ -9,8 +9,6 @@ import {
   INITIATIVE_PRIORITY_LABELS,
   INITIATIVE_STATUSES,
   INITIATIVE_STATUS_LABELS,
-  PLANNING_HORIZONS,
-  PLANNING_HORIZON_LABELS,
 } from "@/lib/constants/roadmap"
 import { slugify } from "@/lib/utils/format"
 import { Button } from "@/components/ui/button"
@@ -53,6 +51,7 @@ export function CreateInitiativeForm({
           {state.error}
         </p>
       ) : null}
+      <input type="hidden" name="planningHorizon" value="later" />
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input
@@ -65,7 +64,7 @@ export function CreateInitiativeForm({
               setInitiativeSlug(slugify(event.target.value))
             }
           }}
-          placeholder="Core Survival Loop"
+          placeholder="Core gameplay, UI polish, multiplayer…"
           required
         />
       </div>
@@ -84,26 +83,11 @@ export function CreateInitiativeForm({
         <Textarea
           id="summary"
           name="summary"
-          placeholder="What this initiative delivers and why it matters."
+          placeholder="What this area covers in the project."
           rows={3}
         />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="planningHorizon">Horizon</Label>
-          <select
-            id="planningHorizon"
-            name="planningHorizon"
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-            defaultValue="later"
-          >
-            {PLANNING_HORIZONS.map((horizon) => (
-              <option key={horizon} value={horizon}>
-                {PLANNING_HORIZON_LABELS[horizon]}
-              </option>
-            ))}
-          </select>
-        </div>
         <div className="space-y-2">
           <Label htmlFor="status">Status</Label>
           <select

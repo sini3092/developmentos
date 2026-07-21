@@ -214,11 +214,12 @@ powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1
           </form>
           <pre className="overflow-x-auto rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
             {`npm run setup-bridge -- -Token YOUR_TOKEN
-npm run personal-stack`}
+start-personal.bat`}
           </pre>
           <p className="text-xs text-muted-foreground">
-            `personal-stack` åpner bridge i eget vindu og viser MCP-config for Codex. Token lagres
-            lokalt i <code className="rounded bg-muted px-1">.env.bridge.local</code> (ikke i git).
+            Dobbeltklikk <code className="rounded bg-muted px-1">start-personal.bat</code> i
+            next-app-mappen. Hold vinduet åpent mens du bruker @personal. Token lagres lokalt i{" "}
+            <code className="rounded bg-muted px-1">.env.bridge.local</code> (ikke i git).
           </p>
 
           <div>

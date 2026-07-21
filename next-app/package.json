@@ -13,7 +13,7 @@
     "create-user": "node scripts/create-user.mjs",
     "codex-bridge": "node scripts/codex-bridge.mjs",
     "developmentos-mcp": "node scripts/developmentos-mcp.mjs",
-    "personal-stack": "powershell -ExecutionPolicy Bypass -File scripts/start-personal-stack.ps1",
+    "personal-stack": "node scripts/start-personal.mjs",
     "setup-bridge": "powershell -ExecutionPolicy Bypass -File scripts/setup-bridge-env.ps1",
     "test:mcp": "node --test scripts/developmentos-mcp.test.mjs"
   },
