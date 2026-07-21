@@ -213,8 +213,13 @@ powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1
             </Button>
           </form>
           <pre className="overflow-x-auto rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-            {`npm run codex-bridge -- --token YOUR_TOKEN --url ${siteOrigin}`}
+            {`npm run setup-bridge -- -Token YOUR_TOKEN
+npm run personal-stack`}
           </pre>
+          <p className="text-xs text-muted-foreground">
+            `personal-stack` åpner bridge i eget vindu og viser MCP-config for Codex. Token lagres
+            lokalt i <code className="rounded bg-muted px-1">.env.bridge.local</code> (ikke i git).
+          </p>
 
           <div>
             <p className="text-sm font-medium">2. MCP-plugin (valgfritt)</p>

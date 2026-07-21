@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react"
 
 import { cn } from "@/lib/utils"
-import { MENTION_CHIP_CLASS, renderMessageBody } from "@/lib/utils/mentions"
+import { Textarea } from "@/components/ui/textarea"
 
 type MentionOption = {
   id: string
@@ -120,67 +120,44 @@ export function MentionTextarea({
 
   return (
     <div className="relative">
-      <div className="relative overflow-hidden rounded-md border border-input bg-transparent shadow-xs">
-        <div
-          aria-hidden
-          className="pointer-events-none min-h-[calc(var(--rows)*1.5rem+1rem)] whitespace-pre-wrap break-words px-3 py-2 text-sm leading-relaxed"
-          style={{ ["--rows" as string]: rows }}
-        >
-          {value ? (
-            renderMessageBody(value).map((part, index) =>
-              part.type === "mention" ? (
-                <span key={index} className={MENTION_CHIP_CLASS}>
-                  {part.value}
-                </span>
-              ) : (
-                <span key={index}>{part.value}</span>
-              )
-            )
-          ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
-          )}
-        </div>
-        <textarea
-          ref={textareaRef}
-          name={name}
-          rows={rows}
-          required={required}
-          value={value}
-          className={cn(
-            "absolute inset-0 resize-none bg-transparent px-3 py-2 text-sm leading-relaxed text-transparent caret-foreground outline-none",
-            "placeholder:text-transparent"
-          )}
-          placeholder={placeholder}
-          onChange={(event) => {
-            onChange(event.target.value)
-            setCursor(event.target.selectionStart ?? 0)
-          }}
-          onClick={updateCursor}
-          onKeyUp={updateCursor}
-          onKeyDown={(event) => {
-            if (!showMenu) {
-              onKeyDown?.(event)
-              return
-            }
+      <Textarea
+        ref={textareaRef}
+        name={name}
+        placeholder={placeholder}
+        rows={rows}
+        required={required}
+        value={value}
+        className="min-h-[calc(var(--rows)*1.5rem+1rem)]"
+        style={{ ["--rows" as string]: rows }}
+        onChange={(event) => {
+          onChange(event.target.value)
+          setCursor(event.target.selectionStart ?? 0)
+        }}
+        onClick={updateCursor}
+        onKeyUp={updateCursor}
+        onKeyDown={(event) => {
+          if (!showMenu) {
+            onKeyDown?.(event)
+            return
+          }
 
-            if (event.key === "ArrowDown") {
-              event.preventDefault()
-              setActiveIndex((index) => (index + 1) % options.length)
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault()
-              setActiveIndex((index) => (index - 1 + options.length) % options.length)
-            } else if (event.key === "Enter" || event.key === "Tab") {
-              event.preventDefault()
-              insertMention(options[activeIndex] ?? options[0]!)
-            } else if (event.key === "Escape") {
-              event.preventDefault()
-              setCursor(0)
-            } else {
-              onKeyDown?.(event)
-            }
-          }}
-        />
-      </div>
+          if (event.key === "ArrowDown") {
+            event.preventDefault()
+            setActiveIndex((index) => (index + 1) % options.length)
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault()
+            setActiveIndex((index) => (index - 1 + options.length) % options.length)
+          } else if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault()
+            insertMention(options[activeIndex] ?? options[0]!)
+          } else if (event.key === "Escape") {
+            event.preventDefault()
+            setCursor(0)
+          } else {
+            onKeyDown?.(event)
+          }
+        }}
+      />
 
       {showMenu ? (
         <div className="absolute bottom-full left-0 z-20 mb-2 w-full max-w-sm overflow-hidden rounded-lg border border-border/60 bg-popover shadow-lg">
@@ -199,7 +176,7 @@ export function MentionTextarea({
                 insertMention(option)
               }}
             >
-              <span className={cn("font-medium", index === activeIndex && MENTION_CHIP_CLASS)}>
+              <span className="font-medium text-blue-700 dark:text-blue-300">
                 @{option.insertValue}
               </span>
               <span className="text-xs text-muted-foreground">{option.description}</span>

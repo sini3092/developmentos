@@ -4,7 +4,7 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { postChannelMessage } from "@/lib/actions/channels"
-import type { ChannelWithMessageTree } from "@/lib/auth/channels-context"
+import type { ChannelMessageNode, ChannelWithMessageTree } from "@/lib/auth/channels-context"
 import type { ProjectMemberWithProfile } from "@/lib/database.types"
 import { ChannelMessageItem } from "@/components/channels/channel-message-item"
 import { MentionTextarea } from "@/components/channels/mention-textarea"
@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button"
 import { useDraftComposer } from "@/hooks/use-draft-composer"
 import type { AgentName } from "@/lib/utils/mentions"
 import { parseAgentMentions } from "@/lib/utils/mentions"
-import type { ChannelMessageNode } from "@/lib/auth/channels-context"
 
 type ChannelFeedProps = {
   channel: ChannelWithMessageTree
@@ -25,6 +24,19 @@ type ChannelFeedProps = {
 
 function messageHasAgentReplies(message: ChannelMessageNode, agents: AgentName[]) {
   return agents.every((agent) => message.replies.some((reply) => reply.agent_name === agent))
+}
+
+function derivePendingAgents(messages: ChannelMessageNode[]) {
+  const pending: Record<string, AgentName[]> = {}
+
+  for (const message of messages) {
+    const agents = parseAgentMentions(message.body)
+    if (agents.length > 0 && !messageHasAgentReplies(message, agents)) {
+      pending[message.id] = agents
+    }
+  }
+
+  return pending
 }
 
 export function ChannelFeed({
@@ -40,7 +52,17 @@ export function ChannelFeed({
   const formRef = useRef<HTMLFormElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const submitBodyRef = useRef<string | null>(null)
-  const [pendingAgents, setPendingAgents] = useState<Record<string, AgentName[]>>({})
+  const [optimisticPending, setOptimisticPending] = useState<Record<string, AgentName[]>>({})
+
+  const derivedPending = useMemo(
+    () => derivePendingAgents(channel.messages),
+    [channel.messages]
+  )
+
+  const pendingAgents = useMemo(
+    () => ({ ...derivedPending, ...optimisticPending }),
+    [derivedPending, optimisticPending]
+  )
 
   const memberProfiles = members.map((member) => ({
     profile: member.profile
@@ -73,7 +95,7 @@ export function ChannelFeed({
     if (state.success && state.messageId && submitBodyRef.current) {
       const agents = parseAgentMentions(submitBodyRef.current)
       if (agents.length > 0) {
-        setPendingAgents((current) => ({ ...current, [state.messageId!]: agents }))
+        setOptimisticPending((current) => ({ ...current, [state.messageId!]: agents }))
       }
       submitBodyRef.current = null
       formRef.current?.reset()
@@ -83,13 +105,20 @@ export function ChannelFeed({
   }, [state.success, state.messageId, router, clearDraft])
 
   useEffect(() => {
-    setPendingAgents((current) => {
-      let changed = false
-      const next: Record<string, AgentName[]> = { ...current }
+    setOptimisticPending((current) => {
+      if (Object.keys(current).length === 0) {
+        return current
+      }
 
-      for (const [messageId, agents] of Object.entries(current)) {
+      const next: Record<string, AgentName[]> = { ...current }
+      let changed = false
+
+      for (const messageId of Object.keys(current)) {
+        if (derivedPending[messageId]) {
+          continue
+        }
         const message = channel.messages.find((item) => item.id === messageId)
-        if (message && messageHasAgentReplies(message, agents)) {
+        if (message && messageHasAgentReplies(message, current[messageId] ?? [])) {
           delete next[messageId]
           changed = true
         }
@@ -97,7 +126,7 @@ export function ChannelFeed({
 
       return changed ? next : current
     })
-  }, [channel.messages])
+  }, [channel.messages, derivedPending])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
