@@ -16,6 +16,7 @@ export type CodexSettingsView = Pick<
   "codex_profile" | "codex_model" | "codex_workspace_path" | "codex_command" | "session_mode"
 > & {
   discovered_workspaces: string[]
+  discovered_project_paths: string[]
   discovered_models: string[]
   catalog_updated_at: string | null
 }
@@ -27,6 +28,7 @@ export const DEFAULT_CODEX_SETTINGS: CodexSettingsView = {
   codex_command: null,
   session_mode: "new",
   discovered_workspaces: [],
+  discovered_project_paths: [],
   discovered_models: [],
   catalog_updated_at: null,
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { buildAgentProjectContext } from "@/lib/agents/build-project-context"
+import { buildChannelTranscript } from "@/lib/agents/build-channel-transcript"
 import { authenticateBridgeToken } from "@/lib/bridge/auth"
 import { DEFAULT_CODEX_SETTINGS } from "@/lib/codex/types"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
@@ -59,16 +60,23 @@ export async function GET(request: Request) {
   const channelSlugById = new Map((channels ?? []).map((channel) => [channel.id, channel.slug]))
 
   const projectContextById = new Map<string, string>()
-  await Promise.all(
-    projectIds.map(async (projectId) => {
+  const channelTranscriptById = new Map<string, string>()
+  await Promise.all([
+    ...projectIds.map(async (projectId) => {
       const workspaceId = projectWorkspaceById.get(projectId)
       if (!workspaceId) return
       projectContextById.set(
         projectId,
         await buildAgentProjectContext(supabase, projectId, workspaceId)
       )
-    })
-  )
+    }),
+    ...channelIds.map(async (channelId) => {
+      channelTranscriptById.set(
+        channelId,
+        await buildChannelTranscript(supabase, channelId, { limit: 30 })
+      )
+    }),
+  ])
 
   const settings = codexSettings
     ? {
@@ -94,6 +102,7 @@ export async function GET(request: Request) {
       project_slug: projectSlugById.get(job.project_id) ?? null,
       channel_slug: channelSlugById.get(job.channel_id) ?? null,
       project_context: projectContextById.get(job.project_id) ?? null,
+      channel_transcript: channelTranscriptById.get(job.channel_id) ?? null,
     })),
   })
 }

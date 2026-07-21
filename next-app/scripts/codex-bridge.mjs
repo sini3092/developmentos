@@ -8,9 +8,8 @@
  * Codex profile, model, and workspace path are read from Settings in the app.
  */
 
-import { spawn, execSync } from "node:child_process"
-import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { homedir } from "node:os"
+import { spawn } from "node:child_process"
+import { existsSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -20,6 +19,8 @@ import {
   resolveCodexCommand,
   resolveCodexInvocation,
 } from "./lib/resolve-codex-cli.mjs"
+import { discoverLocalCodexCatalog } from "./lib/discover-codex-catalog.mjs"
+import { PERSONAL_BRIDGE_RULES } from "./lib/agent-personalities.mjs"
 
 const bridgeRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 const bridgeEnv = loadBridgeEnv(bridgeRoot)
@@ -51,62 +52,42 @@ function parseArgs(argv) {
   return options
 }
 
-function discoverLocalCodexCatalog() {
-  const codexDir = join(homedir(), ".codex")
-  const workspaces = new Set()
-  const models = new Set()
-
-  if (!existsSync(codexDir)) {
-    return { workspaces: [], models: [] }
-  }
-
-  try {
-    for (const file of readdirSync(codexDir)) {
-      if (file.endsWith(".config.toml")) {
-        const name = file.replace(/\.config\.toml$/, "")
-        if (name && name !== "config") {
-          workspaces.add(name)
-        }
-      }
-    }
-
-    const mainConfig = join(codexDir, "config.toml")
-    if (existsSync(mainConfig)) {
-      const text = readFileSync(mainConfig, "utf8")
-      for (const match of text.matchAll(/^\[profiles\.([^\]]+)\]/gm)) {
-        if (match[1]) workspaces.add(match[1])
-      }
-      for (const match of text.matchAll(/^model\s*=\s*"([^"]+)"/gm)) {
-        if (match[1]) models.add(match[1])
-      }
-    }
-  } catch {
-    return { workspaces: [], models: [] }
-  }
-
-  return {
-    workspaces: [...workspaces].sort(),
-    models: [...models].sort(),
-  }
-}
-
 let lastCatalogSyncAt = 0
 
-async function syncCatalog(url, token) {
+async function syncCatalog(url, token, settings) {
   const now = Date.now()
   if (now - lastCatalogSyncAt < 60000) return
   lastCatalogSyncAt = now
 
   const catalog = discoverLocalCodexCatalog()
-  if (catalog.workspaces.length === 0 && catalog.models.length === 0) return
+  const workspacePath = settings?.codex_workspace_path?.trim()
+  const projectPaths = [...catalog.projectPaths]
+  if (
+    workspacePath &&
+    !projectPaths.some((path) => path.toLowerCase() === workspacePath.toLowerCase())
+  ) {
+    projectPaths.push(workspacePath)
+  }
+
+  if (
+    catalog.profiles.length === 0 &&
+    catalog.models.length === 0 &&
+    projectPaths.length === 0
+  ) {
+    return
+  }
 
   try {
     await apiRequest(url, token, "/api/bridge/codex/catalog", {
       method: "POST",
-      body: JSON.stringify(catalog),
+      body: JSON.stringify({
+        workspaces: catalog.profiles,
+        models: catalog.models,
+        project_paths: projectPaths,
+      }),
     })
     console.log(
-      `[bridge] Synced Codex catalog: ${catalog.workspaces.length} workspace(s), ${catalog.models.length} model(s)`
+      `[bridge] Synced Codex catalog: ${catalog.profiles.length} profile(s), ${projectPaths.length} project folder(s), ${catalog.models.length} model(s)`
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : "Catalog sync failed."
@@ -147,14 +128,20 @@ function spawnCodex(cmd, args, options) {
   })
 }
 
-function buildCodexArgs(settings) {
+function buildCodexArgs(settings, workspacePath) {
   const args = ["exec"]
+  const catalog = discoverLocalCodexCatalog()
 
-  if (settings?.codex_profile) {
+  if (settings?.codex_profile && catalog.profiles.includes(settings.codex_profile)) {
     args.push("-p", settings.codex_profile)
   }
+
   if (settings?.codex_model) {
     args.push("-m", settings.codex_model)
+  }
+
+  if (workspacePath) {
+    args.push("-C", workspacePath)
   }
 
   if (settings?.session_mode === "resume_last") {
@@ -200,7 +187,7 @@ function extractCodexResult(stdout, stderr) {
 }
 
 function runCodex(cmd, cwd, settings, prompt, onProgress) {
-  const args = buildCodexArgs(settings)
+  const args = buildCodexArgs(settings, cwd)
 
   return new Promise((resolvePromise, reject) => {
     const child = spawnCodex(cmd, args, {
@@ -220,7 +207,7 @@ function runCodex(cmd, cwd, settings, prompt, onProgress) {
       const text = String(chunk).trim()
       if (!text) return
       const now = Date.now()
-      if (now - lastProgressAt < 8000) return
+      if (now - lastProgressAt < 4000) return
       lastProgressAt = now
       const preview = text.split("\n").find((line) => line.trim()) ?? text
       onProgress(preview.slice(0, 500))
@@ -258,22 +245,33 @@ async function patchJob(url, token, jobId, body) {
 function buildPromptWithContext(job) {
   const userPrompt = String(job.prompt ?? "").trim()
   const context = String(job.project_context ?? "").trim()
+  const transcript = String(job.channel_transcript ?? "").trim()
 
-  if (!context) {
-    return userPrompt
+  const sections = [PERSONAL_BRIDGE_RULES]
+
+  if (context) {
+    sections.push("", context)
   }
 
-  return [
-    context,
+  if (transcript) {
+    sections.push("", "## Recent channel chat (includes Souls and teammates)", transcript)
+  }
+
+  sections.push(
     "",
     "---",
     "",
     "User request from DevelopmentOS channel:",
     userPrompt,
     "",
-    "You are Personal (Codex) for this DevelopmentOS project. Use the context above.",
-    "If DevelopmentOS MCP tools are configured, prefer them for reading/updating tasks, board lists, and checklists.",
-  ].join("\n")
+    "Rules:",
+    "- Board/task: DevelopmentOS context above (lists, remaining %, checklists).",
+    "- Code/Godot: local project folder from session path.",
+    "- You may lightly riff on Souls if they spoke recently — one line max, then deliver.",
+    "- Be concise. Same language as the user."
+  )
+
+  return sections.join("\n")
 }
 
 async function processJob(options, job, settings) {
@@ -291,7 +289,16 @@ async function processJob(options, job, settings) {
 
   console.log(`[bridge] Claiming job ${job.id.slice(0, 8)}…`)
 
-  const profileLabel = settings?.codex_profile ? `profile \`${settings.codex_profile}\`` : "default profile"
+  const profileLabel =
+    settings?.codex_profile && discoverLocalCodexCatalog().profiles.includes(settings.codex_profile)
+      ? `profile \`${settings.codex_profile}\``
+      : "default profile"
+
+  if (settings?.codex_profile && profileLabel === "default profile") {
+    console.warn(
+      `[bridge] Profile "${settings.codex_profile}" not found in ~/.codex — using default. Prosjektmappe ${cwd} is still used for code work.`
+    )
+  }
   const modelLabel = settings?.codex_model ? `model \`${settings.codex_model}\`` : "default model"
 
   await patchJob(options.url, options.token, job.id, {
@@ -355,11 +362,11 @@ async function processJob(options, job, settings) {
 }
 
 async function poll(options) {
-  await syncCatalog(options.url, options.token)
-
   const data = await apiRequest(options.url, options.token, "/api/bridge/codex/jobs")
   const jobs = data.jobs ?? []
   const settings = data.codex_settings ?? null
+
+  await syncCatalog(options.url, options.token, settings)
 
   for (const job of jobs) {
     await processJob(options, job, settings)
@@ -391,6 +398,11 @@ async function main() {
   }
   console.log(`[bridge] Fallback cwd: ${options.cwd}`)
   console.log("[bridge] Profile/model/workspace loaded from Settings on each poll.")
+
+  const catalog = discoverLocalCodexCatalog()
+  if (catalog.projectPaths.length > 0) {
+    console.log(`[bridge] Codex project folders: ${catalog.projectPaths.join(", ")}`)
+  }
 
   while (true) {
     try {

@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { DEVELOPMENTOS_APP_CAPABILITIES } from "@/lib/agents/app-capabilities"
 import type { Database } from "@/lib/database.types"
 import { enrichBoardTasks } from "@/lib/tasks/enrich-board-tasks"
+import { isTaskComplete, isTaskInProgress } from "@/lib/utils/roadmap"
 
 type QueryClient = SupabaseClient<Database>
 
@@ -24,8 +25,6 @@ export async function buildAgentProjectContext(
   const [
     { data: lists },
     { data: rawTasks },
-    { data: initiatives },
-    { data: milestones },
     { data: channels },
     { data: memberships },
   ] = await Promise.all([
@@ -42,18 +41,6 @@ export async function buildAgentProjectContext(
       .order("board_position", { ascending: true })
       .order("created_at", { ascending: false }),
     supabase
-      .from("initiatives")
-      .select("id, name, planning_horizon, progress, status")
-      .eq("project_id", projectId)
-      .neq("status", "cancelled")
-      .order("updated_at", { ascending: false }),
-    supabase
-      .from("milestones")
-      .select("id, name, progress, status")
-      .eq("project_id", projectId)
-      .neq("status", "cancelled")
-      .order("updated_at", { ascending: false }),
-    supabase
       .from("project_channels")
       .select("id, name, slug, description")
       .eq("project_id", projectId)
@@ -69,14 +56,19 @@ export async function buildAgentProjectContext(
       : { data: [] as Array<{ id: string; display_name: string | null }> }
 
   const listNameById = new Map((lists ?? []).map((list) => [list.id, list.name]))
-  const openTasks = tasks.filter((task) => task.status !== "done" && task.status !== "cancelled")
-  const doneTasks = tasks.filter((task) => task.status === "done")
-  const blockedTasks = tasks.filter((task) => task.status === "blocked")
+  const activeTasks = tasks.filter(
+    (task) => task.status !== "cancelled" && !isTaskComplete(task.progress)
+  )
+  const inProgressTasks = activeTasks.filter((task) => isTaskInProgress(task.progress))
+  const notStartedTasks = activeTasks.filter((task) => (task.progress ?? 0) === 0)
+  const doneTasks = tasks.filter(
+    (task) => task.status !== "cancelled" && isTaskComplete(task.progress)
+  )
 
   const boardSections =
     lists && lists.length > 0
       ? lists.map((list) => {
-          const listTasks = openTasks.filter((task) => task.list_id === list.id)
+          const listTasks = activeTasks.filter((task) => task.list_id === list.id)
           const lines =
             listTasks.length > 0
               ? listTasks.map((task) => {
@@ -91,7 +83,7 @@ export async function buildAgentProjectContext(
         })
       : ["No board lists yet."]
 
-  const unlistedTasks = openTasks.filter((task) => !task.list_id || !listNameById.has(task.list_id))
+  const unlistedTasks = activeTasks.filter((task) => !task.list_id || !listNameById.has(task.list_id))
   const unlistedSection =
     unlistedTasks.length > 0
       ? [
@@ -105,12 +97,6 @@ export async function buildAgentProjectContext(
           }),
         ].join("\n")
       : ""
-
-  const initiativeLines = (initiatives ?? []).map(
-    (item) => `- ${item.name} (${item.planning_horizon}): ${item.progress}%`
-  )
-
-  const milestoneLines = (milestones ?? []).map((item) => `- ${item.name}: ${item.progress}%`)
 
   const channelLines =
     channels?.map(
@@ -131,45 +117,32 @@ export async function buildAgentProjectContext(
     project?.description ? project.description : "",
     project?.task_prefix ? `Task prefix: ${project.task_prefix}` : "",
     "",
-    "## Task board by list",
+    "## Board summary",
+    `- Active tasks: ${activeTasks.length}`,
+    `- In progress (checklist started): ${inProgressTasks.length}`,
+    `- Not started (0%): ${notStartedTasks.length}`,
+    `- Complete (100%): ${doneTasks.length}`,
+    "",
+    "## Task board by list (primary source of truth)",
     boardSections.join("\n\n"),
     unlistedSection,
     "",
-    "## Open tasks (all lists)",
-    openTasks.length > 0
-      ? openTasks
-          .slice(0, 50)
-          .map((task) => {
-            const listName = task.list_id ? listNameById.get(task.list_id) ?? "?" : "none"
-            const checklist =
-              task.checklist_total > 0
-                ? ` checklist ${task.checklist_done}/${task.checklist_total}`
-                : ""
-            return `- ${task.identifier} [list: ${listName}] (${remainingPercent(task.progress)}% remaining) — ${task.title}${checklist}`
-          })
-          .join("\n")
-      : "None",
-    "",
-    "## Recently done",
+    "## Recently completed",
     doneTasks
-      .slice(0, 15)
-      .map((task) => `- ${task.identifier} — ${task.title}`)
+      .slice(0, 10)
+      .map((task) => {
+        const listName = task.list_id ? listNameById.get(task.list_id) ?? "?" : "none"
+        return `- ${task.identifier} [list: ${listName}] — ${task.title}`
+      })
       .join("\n") || "None",
-    "",
-    "## Blocked",
-    blockedTasks.map((task) => `- ${task.identifier} — ${task.title}`).join("\n") || "None",
-    "",
-    "## Initiatives (auto-synced from tasks)",
-    initiativeLines.join("\n") || "None",
-    "",
-    "## Milestones",
-    milestoneLines.join("\n") || "None",
     "",
     "## Channels",
     channelLines.join("\n") || "None",
     "",
     "## Team",
     memberLines.join("\n") || "None",
+    "",
+    "Note: Ignore legacy task.status for workflow. Progress comes from checklists. Do not invent milestones or initiatives unless the user asks about roadmap.",
   ]
     .filter(Boolean)
     .join("\n")

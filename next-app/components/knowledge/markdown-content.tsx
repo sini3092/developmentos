@@ -6,9 +6,25 @@ type MarkdownContentProps = {
 }
 
 function renderInline(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g)
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\*[^*]+\*)/g
+  const parts = text.split(pattern)
 
   return parts.map((part, index) => {
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+    if (linkMatch) {
+      return (
+        <a
+          key={index}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+        >
+          {linkMatch[1]}
+        </a>
+      )
+    }
+
     if (part.startsWith("**") && part.endsWith("**")) {
       return (
         <strong key={index} className="font-semibold text-foreground">
@@ -37,6 +53,39 @@ function renderInline(text: string) {
   })
 }
 
+function renderCodeBlock(key: number, language: string, code: string) {
+  const lines = code.split("\n")
+  const isDiff = language === "diff"
+
+  return (
+    <pre
+      key={key}
+      className="my-2 overflow-x-auto rounded-lg border border-border/60 bg-muted/40 p-3 text-xs leading-relaxed"
+    >
+      <code className="font-mono">
+        {isDiff
+          ? lines.map((line, index) => (
+              <span
+                key={index}
+                className={
+                  line.startsWith("+")
+                    ? "block text-success"
+                    : line.startsWith("-")
+                      ? "block text-danger"
+                      : line.startsWith("@@")
+                        ? "block text-info"
+                        : "block text-foreground/80"
+                }
+              >
+                {line || " "}
+              </span>
+            ))
+          : code}
+      </code>
+    </pre>
+  )
+}
+
 export function MarkdownContent({ content, className = "" }: MarkdownContentProps) {
   const lines = content.split("\n")
   const elements: ReactNode[] = []
@@ -59,8 +108,22 @@ export function MarkdownContent({ content, className = "" }: MarkdownContentProp
     listItems = []
   }
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
     const trimmed = line.trim()
+
+    if (trimmed.startsWith("```")) {
+      flushList()
+      const language = trimmed.slice(3).trim()
+      const codeLines: string[] = []
+      index += 1
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        codeLines.push(lines[index])
+        index += 1
+      }
+      elements.push(renderCodeBlock(key++, language, codeLines.join("\n")))
+      continue
+    }
 
     if (trimmed.startsWith("# ")) {
       flushList()

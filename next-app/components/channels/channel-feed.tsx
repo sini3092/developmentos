@@ -19,6 +19,11 @@ import {
   type ChannelAgentJob,
 } from "@/hooks/use-channel-agents-live"
 import { personalAwaitingFinalReply, personalHasFinalReply } from "@/lib/channels/personal-agent-status"
+import {
+  getMessageTreeSignature,
+  isContainerNearBottom,
+  scrollContainerToBottom,
+} from "@/lib/channels/message-tree-signature"
 import type { AgentName } from "@/lib/utils/mentions"
 import { parseAgentMentions } from "@/lib/utils/mentions"
 
@@ -119,6 +124,7 @@ export function ChannelFeed({
   const [state, formAction, pending] = useActionState(postChannelMessage, {})
   const formRef = useRef<HTMLFormElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
+  const shouldAutoScrollRef = useRef(true)
   const submitBodyRef = useRef<string | null>(null)
   const [optimisticPending, setOptimisticPending] = useState<Record<string, AgentName[]>>({})
 
@@ -189,6 +195,67 @@ export function ChannelFeed({
   const { clearDraft } = draft
   const hasPendingAgents = Object.keys(pendingAgents).length > 0 || hasActiveJobs || awaitingPersonalReply
 
+  const messageSignature = useMemo(
+    () => getMessageTreeSignature(liveMessages),
+    [liveMessages]
+  )
+
+  useEffect(() => {
+    const container = messagesScrollRef.current
+    if (!container) {
+      return
+    }
+
+    const onScroll = () => {
+      shouldAutoScrollRef.current = isContainerNearBottom(container)
+    }
+
+    onScroll()
+    container.addEventListener("scroll", onScroll, { passive: true })
+    return () => {
+      container.removeEventListener("scroll", onScroll)
+    }
+  }, [])
+
+  useEffect(() => {
+    const container = messagesScrollRef.current
+    if (!container || !shouldAutoScrollRef.current) {
+      return
+    }
+
+    const scrollToBottom = () => {
+      scrollContainerToBottom(container, "smooth")
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToBottom)
+    })
+  }, [messageSignature, hasPendingAgents])
+
+  useEffect(() => {
+    const container = messagesScrollRef.current
+    if (!container) {
+      return
+    }
+
+    const content = container.firstElementChild
+    if (!content) {
+      return
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (!shouldAutoScrollRef.current) {
+        return
+      }
+      scrollContainerToBottom(container, "auto")
+    })
+
+    observer.observe(content)
+    return () => {
+      observer.disconnect()
+    }
+  }, [messageSignature])
+
   useEffect(() => {
     if (state.success) {
       router.refresh()
@@ -241,18 +308,6 @@ export function ChannelFeed({
       return changed ? next : current
     })
   }, [channel.messages, derivedPending])
-
-  useEffect(() => {
-    const container = messagesScrollRef.current
-    if (!container) {
-      return
-    }
-
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: "smooth",
-    })
-  }, [liveMessages.length, hasPendingAgents])
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden">
@@ -312,6 +367,7 @@ export function ChannelFeed({
                   return
                 }
                 submitBodyRef.current = draft.value
+                shouldAutoScrollRef.current = true
               }}
             >
               <input type="hidden" name="channelId" value={channel.id} />

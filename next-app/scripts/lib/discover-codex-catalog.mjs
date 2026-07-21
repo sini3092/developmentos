@@ -2,15 +2,17 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-function decodeTomlPath(value: string) {
-  return value.trim().replace(/^['"]|['"]$/g, "")
+function decodeTomlPath(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
 }
 
 export function discoverLocalCodexCatalog() {
   const codexDir = join(homedir(), ".codex")
-  const profiles = new Set<string>()
-  const projectPaths = new Set<string>()
-  const models = new Set<string>()
+  const profiles = new Set()
+  const projectPaths = new Set()
+  const models = new Set()
 
   if (!existsSync(codexDir)) {
     return { profiles: [], projectPaths: [], models: [] }
@@ -55,9 +57,7 @@ export function discoverLocalCodexCatalog() {
 
   return {
     profiles: [...profiles].sort((a, b) => a.localeCompare(b)),
-    projectPaths: [...projectPaths].sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
-    ),
+    projectPaths: [...projectPaths].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
     models: [...models].sort(),
   }
 }

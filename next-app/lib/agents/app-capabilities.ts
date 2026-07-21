@@ -11,8 +11,8 @@ DevelopmentOS is a game-dev project OS. Key areas:
 - Legacy task.status still exists in DB but the board UI is list-driven.
 
 ### Roadmap (/projects/{slug}/roadmap)
-- Initiatives and milestones; initiative progress auto-syncs from linked tasks.
-- Post initiative updates with health + progress.
+- Optional higher-level view. Initiative/milestone progress rolls up from task checklist progress.
+- For board questions, use lists + tasks + remaining % — not legacy status columns.
 
 ### Channels (/projects/{slug}/channels)
 - Team chat with threads, reactions, convert message → task.
@@ -30,4 +30,5 @@ DevelopmentOS is a game-dev project OS. Key areas:
 - Personal / Codex: bridge token, workspace path, profile, model, session mode.
 - Members can be created with temporary passwords; users change password in Settings.
 
-When changing tasks for the board, prefer list_id over status. Use checklist items to track granular work.`
+When changing tasks for the board, prefer list_id over status. Use checklist items to track granular work.
+For summaries, group by board list, cite task identifier + remaining %, and mention checklist completion when relevant.`

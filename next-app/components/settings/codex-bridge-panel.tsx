@@ -42,7 +42,9 @@ export function CodexBridgePanel({ settings }: CodexBridgePanelProps) {
   const siteOrigin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"
   const catalogAge = formatCatalogAge(settings.catalog_updated_at)
   const hasCatalog =
-    settings.discovered_workspaces.length > 0 || settings.discovered_models.length > 0
+    settings.discovered_workspaces.length > 0 ||
+    settings.discovered_project_paths.length > 0 ||
+    settings.discovered_models.length > 0
 
   return (
     <Card className="border-border/60 lg:col-span-2">
@@ -61,16 +63,22 @@ export function CodexBridgePanel({ settings }: CodexBridgePanelProps) {
           <div>
             <p className="text-sm font-medium">Codex-innstillinger</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Workspace = prosjektet du har i Codex (f.eks. spillet ditt). Prosjektmappe = mappen
-              Codex skal jobbe i på PC-en.
+              <strong>Prosjektmappe</strong> = mappen Codex jobber i (f.eks. Godot-spillet ditt).
+              <strong> Codex-profil</strong> er valgfritt og kommer fra{" "}
+              <code className="rounded bg-muted px-1">~/.codex/config.toml</code> — ikke det samme som
+              prosjektmappen.
             </p>
             {hasCatalog ? (
               <p className="mt-1 text-xs text-success">
-                Bridge fant Codex på PC-en{catalogAge ? ` (sist synket ${catalogAge})` : ""}.
+                Bridge fant Codex på PC-en
+                {settings.discovered_project_paths.length > 0
+                  ? ` (${settings.discovered_project_paths.length} prosjektmappe${settings.discovered_project_paths.length === 1 ? "" : "r"})`
+                  : ""}
+                {catalogAge ? ` · sist synket ${catalogAge}` : ""}.
               </p>
             ) : (
               <p className="mt-1 text-xs text-muted-foreground">
-                Kjør bridge-scriptet på PC-en for å hente workspaces og modeller automatisk.
+                Kjør bridge-scriptet på PC-en for å hente prosjektmapper og modeller automatisk.
               </p>
             )}
           </div>
@@ -79,13 +87,13 @@ export function CodexBridgePanel({ settings }: CodexBridgePanelProps) {
             <p className="text-sm text-success">{settingsState.success}</p>
           ) : null}
           <div className="space-y-2">
-            <Label htmlFor="codex-profile">Codex workspace</Label>
+            <Label htmlFor="codex-profile">Codex-profil (valgfritt)</Label>
             <Input
               id="codex-profile"
               name="codexProfile"
               list="codex-workspaces"
               defaultValue={settings.codex_profile ?? ""}
-              placeholder="f.eks. game-dev, default"
+              placeholder="Kun hvis du har [profiles.*] i ~/.codex"
             />
             <datalist id="codex-workspaces">
               {settings.discovered_workspaces.map((workspace) => (
@@ -109,13 +117,23 @@ export function CodexBridgePanel({ settings }: CodexBridgePanelProps) {
             </datalist>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="codex-workspace">Prosjektmappe på PC-en</Label>
+            <Label htmlFor="codex-workspace">Prosjektmappe på PC-en (Godot/kode)</Label>
             <Input
               id="codex-workspace"
               name="codexWorkspacePath"
+              list="codex-project-paths"
               defaultValue={settings.codex_workspace_path ?? ""}
-              placeholder="D:\Apps\MittSpill"
+              placeholder="D:\godot\rpg"
             />
+            <datalist id="codex-project-paths">
+              {settings.discovered_project_paths.map((path) => (
+                <option key={path} value={path} />
+              ))}
+            </datalist>
+            <p className="text-xs text-muted-foreground">
+              Dette er mappen @personal bruker for kodeendringer. For board-spørsmål brukes
+              DevelopmentOS-kontekst — ikke filer i denne mappen.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="codex-command">Codex-kommando (valgfritt)</Label>

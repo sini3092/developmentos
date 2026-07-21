@@ -1247,6 +1247,7 @@ export type Database = {
           codex_command: string | null
           session_mode: string
           discovered_workspaces: string[]
+          discovered_project_paths: string[]
           discovered_models: string[]
           catalog_updated_at: string | null
           created_at: string
@@ -1260,6 +1261,7 @@ export type Database = {
           codex_command?: string | null
           session_mode?: string
           discovered_workspaces?: string[]
+          discovered_project_paths?: string[]
           discovered_models?: string[]
           catalog_updated_at?: string | null
           created_at?: string
@@ -1273,6 +1275,7 @@ export type Database = {
           codex_command?: string | null
           session_mode?: string
           discovered_workspaces?: string[]
+          discovered_project_paths?: string[]
           discovered_models?: string[]
           catalog_updated_at?: string | null
           created_at?: string

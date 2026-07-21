@@ -19,15 +19,21 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     workspaces?: string[]
     models?: string[]
+    project_paths?: string[]
   }
 
   const workspaces = (body.workspaces ?? []).map((item) => item.trim()).filter(Boolean).slice(0, 50)
   const models = (body.models ?? []).map((item) => item.trim()).filter(Boolean).slice(0, 50)
+  const projectPaths = (body.project_paths ?? [])
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 50)
 
   const supabase = createAdminClient()
   const payload: CodexCatalogUpsert = {
     user_id: auth.userId,
     discovered_workspaces: workspaces,
+    discovered_project_paths: projectPaths,
     discovered_models: models,
     catalog_updated_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

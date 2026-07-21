@@ -18,10 +18,14 @@ export async function chatWithOpenRouter({
   apiKey,
   model,
   messages,
+  temperature = 0.4,
+  maxTokens = 1200,
 }: {
   apiKey: string
   model: string
   messages: OpenRouterMessage[]
+  temperature?: number
+  maxTokens?: number
 }) {
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -34,8 +38,8 @@ export async function chatWithOpenRouter({
     body: JSON.stringify({
       model,
       messages,
-      temperature: 0.4,
-      max_tokens: 1200,
+      temperature,
+      max_tokens: maxTokens,
     }),
   })
 
