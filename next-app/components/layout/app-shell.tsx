@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar"
 import { AppTopbar } from "@/components/layout/app-topbar"
 import { CommandPalette } from "@/components/layout/command-palette"
 import { NavigationProgress } from "@/components/layout/navigation-progress"
+import { SoulsSidePanel } from "@/components/souls/souls-side-panel"
 import { useIsPwa } from "@/hooks/use-pwa"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 
@@ -25,6 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </SidebarInset>
       <CommandPalette />
+      <SoulsSidePanel />
     </SidebarProvider>
   )
 }

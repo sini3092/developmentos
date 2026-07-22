@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ChevronRight, Pencil } from "lucide-react"
 
+import { AskSoulsButton } from "@/components/souls/ask-souls-button"
 import { LoreDevelopmentPanel } from "@/components/lore/lore-development-panel"
 import { LoreRelationshipsPanel } from "@/components/knowledge/lore-relationships-panel"
 import { LoreVersionsPanel } from "@/components/lore/lore-versions-panel"
@@ -97,13 +98,18 @@ export function LoreEntryReader({
                 </h1>
               </div>
               {canEdit ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/projects/${slug}/lore/${entry.slug}/edit`}>
-                    <Pencil className="size-4" />
-                    Edit
-                  </Link>
-                </Button>
-              ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <AskSoulsButton entrySlug={entry.slug} />
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/projects/${slug}/lore/${entry.slug}/edit`}>
+                      <Pencil className="size-4" />
+                      Edit
+                    </Link>
+                  </Button>
+                </div>
+              ) : (
+                <AskSoulsButton entrySlug={entry.slug} />
+              )}
             </div>
             {entry.summary ? (
               <p className="text-lg leading-relaxed text-muted-foreground">{entry.summary}</p>

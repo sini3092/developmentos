@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Plus,
   Search,
+  Sparkles,
 } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -47,6 +48,7 @@ function buildBreadcrumbs(pathname: string) {
 export function AppTopbar() {
   const pathname = usePathname()
   const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen)
+  const toggleSoulsPanel = useUiStore((state) => state.toggleSoulsPanel)
   const { members, unreadNotificationCount } = useWorkspace()
   const breadcrumbs = buildBreadcrumbs(pathname)
   const visibleMembers = members.slice(0, 4)
@@ -95,6 +97,17 @@ export function AppTopbar() {
           <kbd className="ml-auto rounded border border-border bg-muted px-1.5 font-mono text-[10px]">
             Ctrl K
           </kbd>
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="hidden gap-1.5 sm:inline-flex"
+          onClick={() => toggleSoulsPanel()}
+        >
+          <Sparkles className="size-3.5 text-primary" />
+          Souls
         </Button>
 
         <Button size="sm" className="gap-1.5" asChild>

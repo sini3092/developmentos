@@ -115,6 +115,8 @@ export type LoreMapMarkerType =
   | "faction_territory"
   | "quest_location"
   | "other"
+export type SoulsMessageRole = "user" | "assistant" | "system"
+export type SoulsMessageStatus = "pending" | "working" | "complete" | "error"
 export type AssetType =
   | "mesh"
   | "texture"
@@ -1309,6 +1311,81 @@ export type Database = {
         }
         Relationships: []
       }
+      souls_private_conversations: {
+        Row: {
+          id: string
+          workspace_id: string
+          project_id: string | null
+          user_id: string
+          title: string
+          context_type: string | null
+          context_id: string | null
+          memory_summary: string | null
+          compacted_through_message_id: string | null
+          compacted_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          project_id?: string | null
+          user_id: string
+          title?: string
+          context_type?: string | null
+          context_id?: string | null
+          memory_summary?: string | null
+          compacted_through_message_id?: string | null
+          compacted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          project_id?: string | null
+          user_id?: string
+          title?: string
+          context_type?: string | null
+          context_id?: string | null
+          memory_summary?: string | null
+          compacted_through_message_id?: string | null
+          compacted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      souls_private_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          role: SoulsMessageRole
+          body: string
+          status: SoulsMessageStatus
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          role: SoulsMessageRole
+          body?: string
+          status?: SoulsMessageStatus
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          role?: SoulsMessageRole
+          body?: string
+          status?: SoulsMessageStatus
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
       user_codex_settings: {
         Row: {
           user_id: string
@@ -2443,6 +2520,8 @@ export type Database = {
       lore_development_link_type: LoreDevelopmentLinkType
       lore_timeline_precision: LoreTimelinePrecision
       lore_map_marker_type: LoreMapMarkerType
+      souls_message_role: SoulsMessageRole
+      souls_message_status: SoulsMessageStatus
       automation_action_type: AutomationActionType
       automation_trigger_type: AutomationTriggerType
     }
@@ -2477,6 +2556,9 @@ export type ProjectWithMembership = Project & {
 
 export type Task = Database["public"]["Tables"]["tasks"]["Row"]
 export type BoardList = Database["public"]["Tables"]["board_lists"]["Row"]
+export type SoulsPrivateConversation =
+  Database["public"]["Tables"]["souls_private_conversations"]["Row"]
+export type SoulsPrivateMessage = Database["public"]["Tables"]["souls_private_messages"]["Row"]
 export type CalendarEventRow = Database["public"]["Tables"]["calendar_events"]["Row"]
 export type TaskComment = Database["public"]["Tables"]["task_comments"]["Row"]
 export type TaskAttachment = Database["public"]["Tables"]["task_attachments"]["Row"]
