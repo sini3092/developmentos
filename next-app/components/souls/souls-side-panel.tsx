@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react"
+import { useActionState, useEffect, useMemo, useState, type FormEvent } from "react"
 import { usePathname } from "next/navigation"
 import { Lock, Send, Sparkles, X } from "lucide-react"
 
@@ -21,10 +21,44 @@ function projectSlugFromPath(pathname: string) {
 
 function loreSlugFromPath(pathname: string) {
   const match = pathname.match(/^\/projects\/[^/]+\/lore\/([^/]+)(?:\/|$)/)
-  if (!match || ["browse", "collections", "timeline", "world", "map", "health", "search", "drafts", "review", "archived", "graph"].includes(match[1])) {
+  if (
+    !match ||
+    [
+      "browse",
+      "collections",
+      "timeline",
+      "world",
+      "map",
+      "health",
+      "search",
+      "drafts",
+      "review",
+      "archived",
+      "graph",
+    ].includes(match[1])
+  ) {
     return null
   }
   return match[1]
+}
+
+function mergeMessages(
+  live: SoulsPrivateMessage[],
+  optimistic: SoulsPrivateMessage[]
+) {
+  if (optimistic.length === 0) {
+    return live
+  }
+
+  const liveIds = new Set(live.map((message) => message.id))
+  const liveBodies = new Set(live.map((message) => message.body))
+  const pending = optimistic.filter(
+    (message) => !liveIds.has(message.id) && !liveBodies.has(message.body)
+  )
+
+  return [...live, ...pending].sort(
+    (left, right) => left.created_at.localeCompare(right.created_at)
+  )
 }
 
 export function SoulsSidePanel() {
@@ -43,16 +77,21 @@ export function SoulsSidePanel() {
   const [initialMessages, setInitialMessages] = useState<SoulsPrivateMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [body, setBody] = useState("")
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const [optimisticMessages, setOptimisticMessages] = useState<SoulsPrivateMessage[]>([])
 
   const effectiveLoreSlug = attachLoreSlug ?? pathLoreSlug
 
   const [state, action, pending] = useActionState(sendSoulsPrivateMessage, {})
 
-  const { messages, isWorking } = useSoulsChatLive({
+  const { messages: liveMessages, reloadMessages, isWorking } = useSoulsChatLive({
     conversationId: conversation?.id ?? null,
     initialMessages,
   })
+
+  const messages = useMemo(
+    () => mergeMessages(liveMessages, optimisticMessages),
+    [liveMessages, optimisticMessages]
+  )
 
   useEffect(() => {
     if (!open || !project || !activeWorkspace) {
@@ -79,15 +118,20 @@ export function SoulsSidePanel() {
   }, [open, project, activeWorkspace])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, isWorking])
+    if (!state.success) {
+      return
+    }
+
+    setOptimisticMessages([])
+    setAttachLoreSlug(null)
+    void reloadMessages()
+  }, [state.success, setAttachLoreSlug, reloadMessages])
 
   useEffect(() => {
-    if (state.success) {
-      setBody("")
-      setAttachLoreSlug(null)
-    }
-  }, [state.success, setAttachLoreSlug])
+    setOptimisticMessages((current) =>
+      current.filter((message) => !liveMessages.some((live) => live.body === message.body))
+    )
+  }, [liveMessages])
 
   const placeholder = useMemo(() => {
     if (effectiveLoreSlug) {
@@ -95,6 +139,51 @@ export function SoulsSidePanel() {
     }
     return "Ask Souls privately — paste lore docs, structure regions, or create tasks…"
   }, [effectiveLoreSlug])
+
+  const submitMessage = () => {
+    const text = body.trim()
+    if (!text || !conversation || !project || !activeWorkspace || pending || isWorking) {
+      return
+    }
+
+    const now = new Date().toISOString()
+    setOptimisticMessages((current) => [
+      ...current,
+      {
+        id: `optimistic-${now}`,
+        conversation_id: conversation.id,
+        role: "user" as const,
+        body: text,
+        status: "complete",
+        metadata: effectiveLoreSlug
+          ? {
+              attachedLore: {
+                name: effectiveLoreSlug,
+                slug: effectiveLoreSlug,
+                entryType: "lore",
+              },
+            }
+          : {},
+        created_at: now,
+      },
+    ])
+    setBody("")
+
+    const formData = new FormData()
+    formData.set("workspaceId", activeWorkspace.id)
+    formData.set("projectId", project.id)
+    formData.set("projectSlug", project.slug)
+    if (effectiveLoreSlug) {
+      formData.set("attachLoreSlug", effectiveLoreSlug)
+    }
+    formData.set("body", text)
+    void action(formData)
+  }
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    submitMessage()
+  }
 
   if (!open) {
     return null
@@ -104,10 +193,10 @@ export function SoulsSidePanel() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
+        className="flex h-full w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
         showCloseButton={false}
       >
-        <SheetHeader className="border-b border-border/60 px-4 py-3">
+        <SheetHeader className="shrink-0 border-b border-border/60 px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
               <SheetTitle className="flex items-center gap-2 font-serif text-lg">
@@ -133,17 +222,14 @@ export function SoulsSidePanel() {
         </SheetHeader>
 
         {loading ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
             Summoning Souls…
           </div>
         ) : (
-          <>
-            <SoulsMessageList messages={messages} />
-            <div ref={bottomRef} />
-          </>
+          <SoulsMessageList messages={messages} />
         )}
 
-        <div className="border-t border-border/60 p-4">
+        <div className="shrink-0 border-t border-border/60 p-4">
           {effectiveLoreSlug ? (
             <div className="mb-2 flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs">
               <span>
@@ -164,24 +250,18 @@ export function SoulsSidePanel() {
               Navigate to a project to start a private Souls session.
             </p>
           ) : (
-            <form action={action} className="space-y-2">
-              <input type="hidden" name="workspaceId" value={activeWorkspace.id} />
-              <input type="hidden" name="projectId" value={project.id} />
-              <input type="hidden" name="projectSlug" value={project.slug} />
-              {effectiveLoreSlug ? (
-                <input type="hidden" name="attachLoreSlug" value={effectiveLoreSlug} />
-              ) : null}
+            <form className="space-y-2" onSubmit={handleSubmit}>
               <Textarea
-                name="body"
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
                 placeholder={placeholder}
                 rows={3}
                 disabled={pending || isWorking}
+                className="max-h-36 min-h-16 resize-none overflow-y-auto [field-sizing:fixed]"
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault()
-                    event.currentTarget.form?.requestSubmit()
+                    submitMessage()
                   }
                 }}
               />
@@ -189,7 +269,7 @@ export function SoulsSidePanel() {
               <div className="flex justify-end">
                 <Button type="submit" size="sm" disabled={pending || isWorking || !body.trim()}>
                   <Send className="size-4" />
-                  {isWorking ? "Souls is working…" : "Send"}
+                  {isWorking || pending ? "Souls is working…" : "Send"}
                 </Button>
               </div>
             </form>
