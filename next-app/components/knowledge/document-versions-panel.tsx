@@ -120,6 +120,11 @@ export function LoreVersionsPanel({
                   {formatVersionDate(version.created_at)}
                   {version.author ? ` · ${version.author.display_name}` : ""}
                 </p>
+                {version.change_summary ? (
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {version.change_summary}
+                  </p>
+                ) : null}
               </div>
               {canEdit ? (
                 <form action={restoreAction}>

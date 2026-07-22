@@ -1,6 +1,7 @@
 import { LoreHome } from "@/components/lore/lore-home"
 import { LoreProjectLayout } from "@/components/lore/lore-project-layout"
 import { getLoreOverview } from "@/lib/auth/lore-context"
+import { getLoreHealthReport } from "@/lib/auth/lore-world-context"
 import { requireProject } from "@/lib/auth/project-context"
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context"
 
@@ -13,6 +14,7 @@ export default async function LorePage({ params }: LorePageProps) {
   const workspaceContext = await requireWorkspaceContext()
   const { project, canManage, currentMembership } = await requireProject(slug)
   const overview = await getLoreOverview(project.id)
+  const health = await getLoreHealthReport(project.id)
 
   const canEdit =
     canManage ||
@@ -30,6 +32,7 @@ export default async function LorePage({ params }: LorePageProps) {
         workspaceId={workspaceContext.activeWorkspace!.id}
         projectId={project.id}
         overview={overview}
+        health={health}
         canEdit={canEdit}
       />
     </LoreProjectLayout>

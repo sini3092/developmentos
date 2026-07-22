@@ -26,6 +26,10 @@ const typeLabels: Record<Notification["type"], string> = {
   task_blocked: "Blocked",
   mentioned: "Mention",
   automation: "Automation",
+  calendar_reminder: "Calendar",
+  lore_review_requested: "Lore review",
+  lore_comment: "Lore comment",
+  lore_review_resolved: "Lore review",
 }
 
 export function InboxList({ notifications, workspaceId }: InboxListProps) {

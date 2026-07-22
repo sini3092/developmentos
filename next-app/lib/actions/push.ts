@@ -111,6 +111,7 @@ export async function updateNotificationPreferences(
     push_task_blocked: formData.get("push_task_blocked") === "on",
     push_roadmap_update: formData.get("push_roadmap_update") === "on",
     push_mentioned: formData.get("push_mentioned") === "on",
+    push_calendar_reminder: formData.get("push_calendar_reminder") === "on",
   }
 
   const { error } = await supabase.from("notification_preferences").upsert(

@@ -47,6 +47,10 @@ export type NotificationType =
   | "task_blocked"
   | "mentioned"
   | "automation"
+  | "calendar_reminder"
+  | "lore_review_requested"
+  | "lore_comment"
+  | "lore_review_resolved"
 export type AutomationTriggerType = "task_created" | "task_status_changed" | "task_assigned"
 export type AutomationActionType = "notify_assignee" | "set_task_status" | "add_label"
 export type DocumentStatus =
@@ -86,6 +90,31 @@ export type CanonStatus =
   | "canon"
   | "retconned"
   | "archived"
+export type LoreCommentStatus = "open" | "resolved"
+export type LoreReviewStatus = "pending" | "approved" | "changes_requested" | "cancelled"
+export type LoreChangeType = "minor" | "major" | "retcon"
+export type LoreImplementationStatus =
+  | "not_started"
+  | "planned"
+  | "in_progress"
+  | "implemented"
+  | "needs_update"
+export type LoreDevelopmentLinkType = "asset" | "initiative" | "milestone"
+export type LoreTimelinePrecision =
+  | "exact"
+  | "approximate"
+  | "era_only"
+  | "unknown"
+  | "range"
+export type LoreMapMarkerType =
+  | "settlement"
+  | "ruin"
+  | "dungeon"
+  | "landmark"
+  | "resource"
+  | "faction_territory"
+  | "quest_location"
+  | "other"
 export type AssetType =
   | "mesh"
   | "texture"
@@ -372,6 +401,45 @@ export type Database = {
           name?: string
           color?: string
           position?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      calendar_events: {
+        Row: {
+          id: string
+          workspace_id: string
+          user_id: string
+          title: string
+          description: string | null
+          event_date: string
+          notify_on_day: boolean
+          reminded_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          user_id: string
+          title: string
+          description?: string | null
+          event_date: string
+          notify_on_day?: boolean
+          reminded_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          user_id?: string
+          title?: string
+          description?: string | null
+          event_date?: string
+          notify_on_day?: boolean
+          reminded_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1022,6 +1090,7 @@ export type Database = {
           push_task_blocked: boolean
           push_roadmap_update: boolean
           push_mentioned: boolean
+          push_calendar_reminder: boolean
           created_at: string
           updated_at: string
         }
@@ -1033,6 +1102,7 @@ export type Database = {
           push_task_blocked?: boolean
           push_roadmap_update?: boolean
           push_mentioned?: boolean
+          push_calendar_reminder?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -1044,6 +1114,7 @@ export type Database = {
           push_task_blocked?: boolean
           push_roadmap_update?: boolean
           push_mentioned?: boolean
+          push_calendar_reminder?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -1682,6 +1753,8 @@ export type Database = {
           content_format: KnowledgeContentFormat
           entry_type: LoreEntryType
           canon_status: CanonStatus
+          change_summary: string | null
+          change_type: LoreChangeType | null
           created_by: string | null
           created_at: string
         }
@@ -1696,6 +1769,8 @@ export type Database = {
           content_format?: KnowledgeContentFormat
           entry_type: LoreEntryType
           canon_status: CanonStatus
+          change_summary?: string | null
+          change_type?: LoreChangeType | null
           created_by?: string | null
           created_at?: string
         }
@@ -1710,7 +1785,87 @@ export type Database = {
           content_format?: KnowledgeContentFormat
           entry_type?: LoreEntryType
           canon_status?: CanonStatus
+          change_summary?: string | null
+          change_type?: LoreChangeType | null
           created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      lore_comments: {
+        Row: {
+          id: string
+          entry_id: string
+          section_id: string | null
+          parent_comment_id: string | null
+          content: string
+          status: LoreCommentStatus
+          created_by: string
+          created_at: string
+          updated_at: string
+          resolved_by: string | null
+          resolved_at: string | null
+        }
+        Insert: {
+          id?: string
+          entry_id: string
+          section_id?: string | null
+          parent_comment_id?: string | null
+          content: string
+          status?: LoreCommentStatus
+          created_by: string
+          created_at?: string
+          updated_at?: string
+          resolved_by?: string | null
+          resolved_at?: string | null
+        }
+        Update: {
+          id?: string
+          entry_id?: string
+          section_id?: string | null
+          parent_comment_id?: string | null
+          content?: string
+          status?: LoreCommentStatus
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+          resolved_by?: string | null
+          resolved_at?: string | null
+        }
+        Relationships: []
+      }
+      lore_review_requests: {
+        Row: {
+          id: string
+          entry_id: string
+          requested_by: string
+          message: string | null
+          status: LoreReviewStatus
+          resolved_by: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          entry_id: string
+          requested_by: string
+          message?: string | null
+          status?: LoreReviewStatus
+          resolved_by?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          entry_id?: string
+          requested_by?: string
+          message?: string | null
+          status?: LoreReviewStatus
+          resolved_by?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
           created_at?: string
         }
         Relationships: []
@@ -1745,6 +1900,255 @@ export type Database = {
         }
         Relationships: []
       }
+      lore_entry_links: {
+        Row: {
+          id: string
+          source_entry_id: string
+          target_entry_id: string
+          anchor_text: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          source_entry_id: string
+          target_entry_id: string
+          anchor_text?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          source_entry_id?: string
+          target_entry_id?: string
+          anchor_text?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      lore_development_links: {
+        Row: {
+          id: string
+          entry_id: string
+          link_type: LoreDevelopmentLinkType
+          linked_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          entry_id: string
+          link_type: LoreDevelopmentLinkType
+          linked_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          entry_id?: string
+          link_type?: LoreDevelopmentLinkType
+          linked_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      lore_sections: {
+        Row: {
+          id: string
+          entry_id: string
+          section_key: string
+          title: string
+          content: string
+          content_json: Json | null
+          content_format: KnowledgeContentFormat
+          position: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entry_id: string
+          section_key: string
+          title: string
+          content?: string
+          content_json?: Json | null
+          content_format?: KnowledgeContentFormat
+          position?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entry_id?: string
+          section_key?: string
+          title?: string
+          content?: string
+          content_json?: Json | null
+          content_format?: KnowledgeContentFormat
+          position?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      lore_eras: {
+        Row: {
+          id: string
+          project_id: string
+          name: string
+          short_label: string | null
+          description: string | null
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          name: string
+          short_label?: string | null
+          description?: string | null
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          name?: string
+          short_label?: string | null
+          description?: string | null
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      lore_collections: {
+        Row: {
+          id: string
+          project_id: string
+          name: string
+          slug: string
+          description: string | null
+          cover_image_url: string | null
+          is_featured: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          name: string
+          slug: string
+          description?: string | null
+          cover_image_url?: string | null
+          is_featured?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          name?: string
+          slug?: string
+          description?: string | null
+          cover_image_url?: string | null
+          is_featured?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      lore_collection_entries: {
+        Row: {
+          id: string
+          collection_id: string
+          entry_id: string
+          position: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          collection_id: string
+          entry_id: string
+          position?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          collection_id?: string
+          entry_id?: string
+          position?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      lore_world_maps: {
+        Row: {
+          id: string
+          project_id: string
+          name: string
+          description: string | null
+          image_url: string
+          is_primary: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          name: string
+          description?: string | null
+          image_url: string
+          is_primary?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          name?: string
+          description?: string | null
+          image_url?: string
+          is_primary?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      lore_map_markers: {
+        Row: {
+          id: string
+          map_id: string
+          entry_id: string | null
+          label: string
+          marker_type: LoreMapMarkerType
+          x_percent: number
+          y_percent: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          map_id: string
+          entry_id?: string | null
+          label: string
+          marker_type?: LoreMapMarkerType
+          x_percent: number
+          y_percent: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          map_id?: string
+          entry_id?: string | null
+          label?: string
+          marker_type?: LoreMapMarkerType
+          x_percent?: number
+          y_percent?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
       lore_entries: {
         Row: {
           id: string
@@ -1758,6 +2162,18 @@ export type Database = {
           content_json: Json | null
           content_format: KnowledgeContentFormat
           canon_status: CanonStatus
+          change_summary: string | null
+          retcon_reason: string | null
+          retconned_at: string | null
+          retconned_by: string | null
+          replacement_entry_id: string | null
+          implementation_status: LoreImplementationStatus
+          parent_entry_id: string | null
+          timeline_label: string | null
+          timeline_end_label: string | null
+          timeline_sort_order: number | null
+          timeline_era_id: string | null
+          timeline_precision: LoreTimelinePrecision
           author_id: string | null
           created_by: string | null
           created_at: string
@@ -1775,6 +2191,18 @@ export type Database = {
           content_json?: Json | null
           content_format?: KnowledgeContentFormat
           canon_status?: CanonStatus
+          change_summary?: string | null
+          retcon_reason?: string | null
+          retconned_at?: string | null
+          retconned_by?: string | null
+          replacement_entry_id?: string | null
+          implementation_status?: LoreImplementationStatus
+          parent_entry_id?: string | null
+          timeline_label?: string | null
+          timeline_end_label?: string | null
+          timeline_sort_order?: number | null
+          timeline_era_id?: string | null
+          timeline_precision?: LoreTimelinePrecision
           author_id?: string | null
           created_by?: string | null
           created_at?: string
@@ -1792,6 +2220,18 @@ export type Database = {
           content_json?: Json | null
           content_format?: KnowledgeContentFormat
           canon_status?: CanonStatus
+          change_summary?: string | null
+          retcon_reason?: string | null
+          retconned_at?: string | null
+          retconned_by?: string | null
+          replacement_entry_id?: string | null
+          implementation_status?: LoreImplementationStatus
+          parent_entry_id?: string | null
+          timeline_label?: string | null
+          timeline_end_label?: string | null
+          timeline_sort_order?: number | null
+          timeline_era_id?: string | null
+          timeline_precision?: LoreTimelinePrecision
           author_id?: string | null
           created_by?: string | null
           created_at?: string
@@ -1903,6 +2343,42 @@ export type Database = {
         }
         Returns: undefined
       }
+      notify_lore_mention: {
+        Args: {
+          p_workspace_id: string
+          p_user_id: string
+          p_title: string
+          p_body?: string | null
+          p_link?: string | null
+          p_entry_id: string
+          p_comment_id: string
+        }
+        Returns: undefined
+      }
+      notify_lore_review_requested: {
+        Args: {
+          p_workspace_id: string
+          p_user_id: string
+          p_title: string
+          p_body?: string | null
+          p_link?: string | null
+          p_entry_id: string
+          p_review_id: string
+        }
+        Returns: undefined
+      }
+      notify_lore_review_resolved: {
+        Args: {
+          p_workspace_id: string
+          p_user_id: string
+          p_title: string
+          p_body?: string | null
+          p_link?: string | null
+          p_entry_id: string
+          p_review_id: string
+        }
+        Returns: undefined
+      }
       post_agent_channel_message: {
         Args: {
           p_channel_id: string
@@ -1962,6 +2438,11 @@ export type Database = {
       density_preference: DensityPreference
       knowledge_content_format: KnowledgeContentFormat
       lore_relationship_type: LoreRelationshipType
+      lore_change_type: LoreChangeType
+      lore_implementation_status: LoreImplementationStatus
+      lore_development_link_type: LoreDevelopmentLinkType
+      lore_timeline_precision: LoreTimelinePrecision
+      lore_map_marker_type: LoreMapMarkerType
       automation_action_type: AutomationActionType
       automation_trigger_type: AutomationTriggerType
     }
@@ -1996,6 +2477,7 @@ export type ProjectWithMembership = Project & {
 
 export type Task = Database["public"]["Tables"]["tasks"]["Row"]
 export type BoardList = Database["public"]["Tables"]["board_lists"]["Row"]
+export type CalendarEventRow = Database["public"]["Tables"]["calendar_events"]["Row"]
 export type TaskComment = Database["public"]["Tables"]["task_comments"]["Row"]
 export type TaskAttachment = Database["public"]["Tables"]["task_attachments"]["Row"]
 export type Label = Database["public"]["Tables"]["labels"]["Row"]
@@ -2066,7 +2548,15 @@ export type DesignDocument = Database["public"]["Tables"]["design_documents"]["R
 export type DesignDocumentVersion =
   Database["public"]["Tables"]["design_document_versions"]["Row"]
 export type LoreEntry = Database["public"]["Tables"]["lore_entries"]["Row"]
+export type LoreEra = Database["public"]["Tables"]["lore_eras"]["Row"]
+export type LoreCollection = Database["public"]["Tables"]["lore_collections"]["Row"]
+export type LoreCollectionEntry = Database["public"]["Tables"]["lore_collection_entries"]["Row"]
+export type LoreWorldMap = Database["public"]["Tables"]["lore_world_maps"]["Row"]
+export type LoreMapMarker = Database["public"]["Tables"]["lore_map_markers"]["Row"]
+export type LoreSection = Database["public"]["Tables"]["lore_sections"]["Row"]
 export type LoreEntryVersion = Database["public"]["Tables"]["lore_entry_versions"]["Row"]
+export type LoreComment = Database["public"]["Tables"]["lore_comments"]["Row"]
+export type LoreReviewRequest = Database["public"]["Tables"]["lore_review_requests"]["Row"]
 export type LoreEntryRelationship =
   Database["public"]["Tables"]["lore_entry_relationships"]["Row"]
 export type Asset = Database["public"]["Tables"]["assets"]["Row"]
@@ -2102,6 +2592,7 @@ export type ResolvedLoreRelationship = LoreEntryRelationship & {
 export type LoreEntryDetail = LoreEntryWithAuthor & {
   versions: Array<LoreEntryVersion & { author: Profile | null }>
   relationships: ResolvedLoreRelationship[]
+  sections: LoreSection[]
 }
 
 export type LoreGraphNode = Pick<LoreEntry, "id" | "name" | "slug" | "entry_type">

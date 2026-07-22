@@ -1,5 +1,6 @@
 import { LoreEntryEditor, LoreEntryHeader } from "@/components/knowledge/lore-entry-editor"
 import { LoreProjectLayout } from "@/components/lore/lore-project-layout"
+import { getPendingLoreReview } from "@/lib/auth/lore-collaboration-context"
 import { requireProject } from "@/lib/auth/project-context"
 import { getLoreEntriesForLinking, requireLoreEntry } from "@/lib/auth/knowledge-context"
 
@@ -9,9 +10,12 @@ type LoreEntryEditPageProps = {
 
 export default async function LoreEntryEditPage({ params }: LoreEntryEditPageProps) {
   const { slug, entrySlug } = await params
-  const { project, canManage, currentMembership } = await requireProject(slug)
+  const { project, canManage, members, currentMembership } = await requireProject(slug)
   const entry = await requireLoreEntry(project.id, entrySlug)
-  const otherEntries = await getLoreEntriesForLinking(project.id, entry.id)
+  const [otherEntries, pendingReview] = await Promise.all([
+    getLoreEntriesForLinking(project.id, entry.id),
+    getPendingLoreReview(entry.id),
+  ])
 
   const canEdit =
     canManage ||
@@ -25,12 +29,22 @@ export default async function LoreEntryEditPage({ params }: LoreEntryEditPagePro
     )
   }
 
+  const memberProfiles = members.map((member) => ({ profile: member.profile }))
+
   return (
     <LoreProjectLayout slug={slug} canManage={canManage} title={`Edit ${entry.name}`}>
       <div className="border-b border-border/60 px-6 py-2">
         <LoreEntryHeader slug={slug} entrySlug={entry.slug} />
       </div>
-      <LoreEntryEditor entry={entry} slug={slug} otherEntries={otherEntries} canEdit />
+      <LoreEntryEditor
+        entry={entry}
+        slug={slug}
+        otherEntries={otherEntries}
+        members={memberProfiles}
+        pendingReview={pendingReview}
+        canEdit
+        canReview={canManage}
+      />
     </LoreProjectLayout>
   )
 }

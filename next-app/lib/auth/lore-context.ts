@@ -40,6 +40,14 @@ export type LoreBacklink = {
   label: string | null
 }
 
+export type LoreContentBacklink = {
+  id: string
+  name: string
+  slug: string
+  summary: string | null
+  entry_type: LoreEntryType
+}
+
 function matchesSearch(entry: LoreEntryWithAuthor, search: string) {
   const query = search.trim().toLowerCase()
   if (!query) {
@@ -137,6 +145,55 @@ export async function getLoreBacklinks(projectId: string, entryId: string) {
         label: row.label,
       },
     ]
+  })
+}
+
+export async function getLoreContentBacklinks(projectId: string, entryId: string) {
+  const supabase = await createClient()
+
+  const { data: links } = await supabase
+    .from("lore_entry_links")
+    .select("source_entry_id")
+    .eq("target_entry_id", entryId)
+
+  if (!links?.length) {
+    return [] as LoreContentBacklink[]
+  }
+
+  const sourceIds = links.map((link) => link.source_entry_id)
+  const { data: sources } = await supabase
+    .from("lore_entries")
+    .select("id, name, slug, summary, entry_type")
+    .eq("project_id", projectId)
+    .in("id", sourceIds)
+
+  return (sources ?? []) as LoreContentBacklink[]
+}
+
+export async function getLoreLinkTargets(projectId: string) {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("lore_entries")
+    .select("id, slug, name, summary, entry_type")
+    .eq("project_id", projectId)
+
+  return data ?? []
+}
+
+export async function searchLoreEntries(projectId: string, query: string) {
+  const entries = await getLoreEntries(projectId)
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) {
+    return entries.filter((entry) => entry.canon_status !== "archived")
+  }
+
+  return entries.filter((entry) => {
+    if (entry.canon_status === "archived") return false
+    return (
+      entry.name.toLowerCase().includes(normalized) ||
+      (entry.summary?.toLowerCase().includes(normalized) ?? false) ||
+      entry.content.toLowerCase().includes(normalized)
+    )
   })
 }
 

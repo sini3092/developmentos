@@ -29,6 +29,8 @@ function isTypeEnabled(
       return prefs.push_roadmap_update
     case "mentioned":
       return prefs.push_mentioned
+    case "calendar_reminder":
+      return prefs.push_calendar_reminder
     default:
       return false
   }

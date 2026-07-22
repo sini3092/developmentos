@@ -6,6 +6,7 @@ import type {
   CanonStatus,
   DesignDocument,
   DocumentStatus,
+  LoreChangeType,
   LoreEntry,
   LoreEntryType,
   LoreRelationshipType,
@@ -13,6 +14,8 @@ import type {
 import { createClient } from "@/lib/supabase/server"
 import { slugify } from "@/lib/utils/format"
 import { parseEditorPayload } from "@/lib/utils/tiptap"
+import { syncLoreEntryLinks } from "@/lib/lore/internal-links"
+import { ensureLoreSectionsForEntry, syncLoreSectionTemplates } from "@/lib/lore/sections"
 
 export type KnowledgeActionState = {
   error?: string
@@ -32,9 +35,17 @@ function revalidateLorePaths(slug: string, entrySlug?: string) {
   revalidatePath(`/projects/${slug}/lore/drafts`)
   revalidatePath(`/projects/${slug}/lore/review`)
   revalidatePath(`/projects/${slug}/lore/archived`)
+  revalidatePath(`/projects/${slug}/lore/search`)
+  revalidatePath(`/projects/${slug}/lore/graph`)
+  revalidatePath(`/projects/${slug}/lore/timeline`)
+  revalidatePath(`/projects/${slug}/lore/collections`)
+  revalidatePath(`/projects/${slug}/lore/world`)
+  revalidatePath(`/projects/${slug}/lore/map`)
+  revalidatePath(`/projects/${slug}/lore/health`)
   if (entrySlug) {
     revalidatePath(`/projects/${slug}/lore/${entrySlug}`)
     revalidatePath(`/projects/${slug}/lore/${entrySlug}/edit`)
+    revalidatePath(`/projects/${slug}/lore/${entrySlug}/versions`)
   }
 }
 
@@ -85,7 +96,11 @@ async function snapshotDesignDocument(
 async function snapshotLoreEntry(
   supabase: Awaited<ReturnType<typeof createClient>>,
   entry: LoreEntry,
-  userId: string | null
+  userId: string | null,
+  options?: {
+    changeSummary?: string | null
+    changeType?: LoreChangeType | null
+  }
 ) {
   const versionNumber = await getNextLoreVersionNumber(supabase, entry.id)
   await supabase.from("lore_entry_versions").insert({
@@ -98,6 +113,8 @@ async function snapshotLoreEntry(
     content_format: entry.content_format,
     entry_type: entry.entry_type,
     canon_status: entry.canon_status,
+    change_summary: options?.changeSummary ?? entry.change_summary ?? null,
+    change_type: options?.changeType ?? null,
     created_by: userId,
   })
 }
@@ -262,18 +279,22 @@ export async function createLoreEntry(
     return { error: "Not authenticated." }
   }
 
-  const { error } = await supabase.from("lore_entries").insert({
-    workspace_id: workspaceId,
-    project_id: projectId,
-    name,
-    slug: entrySlug,
-    entry_type: entryType,
-    summary: summary || null,
-    content: content || `# ${name}\n\n${summary || ""}`,
-    canon_status: canonStatus,
-    author_id: user.id,
-    created_by: user.id,
-  })
+  const { data, error } = await supabase
+    .from("lore_entries")
+    .insert({
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name,
+      slug: entrySlug,
+      entry_type: entryType,
+      summary: summary || null,
+      content: content || `# ${name}\n\n${summary || ""}`,
+      canon_status: canonStatus,
+      author_id: user.id,
+      created_by: user.id,
+    })
+    .select("id, content")
+    .single()
 
   if (error) {
     if (error.message.includes("lore_entries_project_id_slug_key")) {
@@ -281,6 +302,8 @@ export async function createLoreEntry(
     }
     return { error: error.message }
   }
+
+  await ensureLoreSectionsForEntry(supabase, data.id, entryType, data.content)
 
   revalidateLorePaths(slug, entrySlug)
   return { success: "Lore entry created." }
@@ -299,6 +322,9 @@ export async function updateLoreEntry(
   const contentJsonRaw = String(formData.get("contentJson") ?? "")
   const parsed = parseEditorPayload(contentJsonRaw, "tiptap")
   const canonStatus = String(formData.get("canonStatus") ?? "draft") as CanonStatus
+  const changeSummary = String(formData.get("changeSummary") ?? "").trim()
+  const changeTypeRaw = String(formData.get("changeType") ?? "").trim()
+  const changeType = changeTypeRaw ? (changeTypeRaw as LoreChangeType) : null
 
   if (!entryId || !name) {
     return { error: "Entry name is required." }
@@ -319,8 +345,28 @@ export async function updateLoreEntry(
     return { error: "Lore entry not found." }
   }
 
-  if (hasLoreContentChanged(existing, parsed.content, parsed.contentJson)) {
-    await snapshotLoreEntry(supabase, existing, user?.id ?? null)
+  const contentChanged = hasLoreContentChanged(existing, parsed.content, parsed.contentJson)
+  if (
+    contentChanged &&
+    (existing.canon_status === "canon" || canonStatus === "canon") &&
+    !changeSummary
+  ) {
+    return { error: "A change summary is required when editing canon lore." }
+  }
+
+  if (
+    contentChanged &&
+    (existing.canon_status === "canon" || canonStatus === "canon") &&
+    !changeType
+  ) {
+    return { error: "Classify this canon change as minor or major." }
+  }
+
+  if (contentChanged) {
+    await snapshotLoreEntry(supabase, existing, user?.id ?? null, {
+      changeSummary: changeSummary || null,
+      changeType,
+    })
   }
 
   const { error } = await supabase
@@ -333,6 +379,7 @@ export async function updateLoreEntry(
       content_json: parsed.contentJson,
       content_format: parsed.contentFormat,
       canon_status: canonStatus,
+      change_summary: changeSummary || existing.change_summary,
     })
     .eq("id", entryId)
 
@@ -340,8 +387,121 @@ export async function updateLoreEntry(
     return { error: error.message }
   }
 
+  if (existing.entry_type !== entryType) {
+    await syncLoreSectionTemplates(supabase, entryId, entryType)
+  }
+
+  const { data: sections } = await supabase
+    .from("lore_sections")
+    .select("content")
+    .eq("entry_id", entryId)
+
+  await syncLoreEntryLinks(supabase, entryId, existing.project_id, [
+    parsed.content,
+    ...(sections ?? []).map((section) => section.content),
+  ])
+
   revalidateLorePaths(slug, entrySlug)
   return { success: "Lore entry updated." }
+}
+
+export async function updateLoreSections(
+  _prevState: KnowledgeActionState,
+  formData: FormData
+): Promise<KnowledgeActionState> {
+  const entryId = String(formData.get("entryId") ?? "")
+  const slug = String(formData.get("slug") ?? "")
+  const entrySlug = String(formData.get("entrySlug") ?? "")
+  const changeSummary = String(formData.get("changeSummary") ?? "").trim()
+  const changeTypeRaw = String(formData.get("changeType") ?? "").trim()
+  const changeType = changeTypeRaw ? (changeTypeRaw as LoreChangeType) : null
+
+  if (!entryId) {
+    return { error: "Entry is required." }
+  }
+
+  const supabase = await createClient()
+
+  const { data: entry } = await supabase
+    .from("lore_entries")
+    .select("project_id, canon_status, change_summary")
+    .eq("id", entryId)
+    .maybeSingle()
+
+  const { data: sections } = await supabase
+    .from("lore_sections")
+    .select("id, section_key, content")
+    .eq("entry_id", entryId)
+
+  if (!sections?.length) {
+    return { error: "No sections found for this entry." }
+  }
+
+  if (entry?.canon_status === "canon" && !changeSummary) {
+    return { error: "A change summary is required when editing canon lore sections." }
+  }
+
+  if (entry?.canon_status === "canon" && !changeType) {
+    return { error: "Classify this canon change as minor or major." }
+  }
+
+  if (entry?.canon_status === "canon") {
+    const { data: currentEntry } = await supabase
+      .from("lore_entries")
+      .select("*")
+      .eq("id", entryId)
+      .maybeSingle()
+
+    if (currentEntry) {
+      await snapshotLoreEntry(supabase, currentEntry, null, {
+        changeSummary,
+        changeType,
+      })
+    }
+  }
+
+  for (const section of sections) {
+    const contentJsonRaw = String(formData.get(`section_${section.section_key}`) ?? "")
+    const parsed = parseEditorPayload(contentJsonRaw, "tiptap")
+
+    const { error } = await supabase
+      .from("lore_sections")
+      .update({
+        content: parsed.content,
+        content_json: parsed.contentJson,
+        content_format: parsed.contentFormat,
+      })
+      .eq("id", section.id)
+
+    if (error) {
+      return { error: error.message }
+    }
+  }
+
+  if (changeSummary && entry) {
+    await supabase.from("lore_entries").update({ change_summary: changeSummary }).eq("id", entryId)
+  }
+
+  if (entry?.project_id) {
+    const { data: updatedSections } = await supabase
+      .from("lore_sections")
+      .select("content")
+      .eq("entry_id", entryId)
+
+    const { data: mainEntry } = await supabase
+      .from("lore_entries")
+      .select("content")
+      .eq("id", entryId)
+      .maybeSingle()
+
+    await syncLoreEntryLinks(supabase, entryId, entry.project_id, [
+      mainEntry?.content ?? "",
+      ...(updatedSections ?? []).map((section) => section.content),
+    ])
+  }
+
+  revalidateLorePaths(slug, entrySlug)
+  return { success: "Lore sections saved." }
 }
 
 export async function restoreDesignDocumentVersion(
@@ -413,7 +573,10 @@ export async function restoreLoreEntryVersion(
     return { error: "Version not found." }
   }
 
-  await snapshotLoreEntry(supabase, entry, user?.id ?? null)
+  await snapshotLoreEntry(supabase, entry, user?.id ?? null, {
+    changeSummary: entry.change_summary,
+    changeType: null,
+  })
 
   const { error } = await supabase
     .from("lore_entries")

@@ -2,7 +2,9 @@ import Link from "next/link"
 import { Plus } from "lucide-react"
 
 import type { LoreOverview } from "@/lib/auth/lore-context"
+import type { LoreHealthReport } from "@/lib/auth/lore-world-context"
 import { CreateLoreEntryDialog } from "@/components/lore/create-lore-entry-dialog"
+import { LoreHealthDashboard } from "@/components/lore/lore-health-dashboard"
 import { LoreCanonBadge } from "@/components/lore/lore-badges"
 import { LoreEntryCard } from "@/components/lore/lore-entry-card"
 import { SeedLoreForm } from "@/components/lore/seed-lore-form"
@@ -27,6 +29,7 @@ type LoreHomeProps = {
   workspaceId: string
   projectId: string
   overview: LoreOverview
+  health: LoreHealthReport
   canEdit: boolean
 }
 
@@ -36,6 +39,7 @@ export function LoreHome({
   workspaceId,
   projectId,
   overview,
+  health,
   canEdit,
 }: LoreHomeProps) {
   const isEmpty = overview.totalEntries === 0
@@ -129,6 +133,29 @@ export function LoreHome({
           </div>
         </section>
       ) : null}
+
+      <section className="space-y-4">
+        <h3 className="text-sm font-medium">World tools</h3>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { href: "timeline", label: "Timeline", desc: "Historical events in order" },
+            { href: "collections", label: "Collections", desc: "Curated lore groups" },
+            { href: "world", label: "Geography", desc: "Region and location tree" },
+            { href: "map", label: "World map", desc: "Markers on map images" },
+          ].map((tool) => (
+            <Link
+              key={tool.href}
+              href={`/projects/${slug}/lore/${tool.href}`}
+              className="rounded-xl border border-border/60 bg-card p-4 shadow-xs transition-colors hover:bg-muted/30"
+            >
+              <p className="font-medium">{tool.label}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{tool.desc}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <LoreHealthDashboard slug={slug} report={health} compact />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <article className="rounded-xl border border-border/60 bg-card p-4 shadow-xs">

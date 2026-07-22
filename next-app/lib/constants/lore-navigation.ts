@@ -91,6 +91,12 @@ for (const category of LORE_CATEGORY_CARDS) {
 export const LORE_SIDEBAR_LINKS = [
   { title: "Lore Home", href: "" },
   { title: "Browse", href: "browse" },
+  { title: "Search", href: "search" },
+  { title: "Timeline", href: "timeline" },
+  { title: "Collections", href: "collections" },
+  { title: "World", href: "world" },
+  { title: "Map", href: "map" },
+  { title: "Health", href: "health" },
   { title: "Drafts", href: "drafts" },
   { title: "Review Queue", href: "review" },
   { title: "Archived", href: "archived" },

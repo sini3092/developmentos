@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useState, useTransition } from "react"
+import { useActionState, useEffect, useRef, useState, useTransition } from "react"
 import {
   DndContext,
   PointerSensor,
@@ -23,6 +23,7 @@ import {
   deleteChecklistItem,
   reorderChecklistItems,
   toggleChecklistItem,
+  type TaskActionState,
 } from "@/lib/actions/tasks"
 import type { ProjectMemberWithProfile, TaskChecklistItem } from "@/lib/database.types"
 import { Button } from "@/components/ui/button"
@@ -133,9 +134,56 @@ export function TaskChecklistSection({
   canEdit,
   onChanged,
 }: TaskChecklistSectionProps) {
-  const [addState, addAction, addPending] = useActionState(addChecklistItem, {})
+  const formRef = useRef<HTMLFormElement>(null)
+  const onChangedRef = useRef(onChanged)
   const [isUpdating, startUpdate] = useTransition()
   const [orderedItems, setOrderedItems] = useState(items)
+
+  const [addState, addAction, addPending] = useActionState(
+    async (prevState: TaskActionState, formData: FormData) => {
+      const title = String(formData.get("title") ?? "").trim()
+      const optimisticId = `optimistic-${crypto.randomUUID()}`
+
+      if (title) {
+        setOrderedItems((current) => [
+          ...current,
+          {
+            id: optimisticId,
+            task_id: taskId,
+            title,
+            completed: false,
+            position: current.length,
+            completed_by: null,
+            completed_at: null,
+            created_at: new Date().toISOString(),
+          },
+        ])
+      }
+
+      const result = await addChecklistItem(prevState, formData)
+
+      if (result.error) {
+        if (title) {
+          setOrderedItems((current) => current.filter((item) => item.id !== optimisticId))
+        }
+        return result
+      }
+
+      if (result.checklistItem) {
+        setOrderedItems((current) =>
+          current.map((item) =>
+            item.id === optimisticId ? { ...result.checklistItem!, completer: null } : item
+          )
+        )
+      }
+
+      formRef.current?.reset()
+      onChangedRef.current?.()
+
+      return result
+    },
+    {}
+  )
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -144,14 +192,12 @@ export function TaskChecklistSection({
   )
 
   useEffect(() => {
-    setOrderedItems(items)
-  }, [items])
+    onChangedRef.current = onChanged
+  }, [onChanged])
 
   useEffect(() => {
-    if (addState.success) {
-      onChanged?.()
-    }
-  }, [addState.success, onChanged])
+    setOrderedItems(items)
+  }, [items])
 
   const completedCount = orderedItems.filter((item) => item.completed).length
   const progress =
@@ -218,15 +264,29 @@ export function TaskChecklistSection({
                   canEdit={canEdit}
                   isUpdating={isUpdating}
                   onToggle={() => {
+                    setOrderedItems((current) =>
+                      current.map((entry) =>
+                        entry.id === item.id ? { ...entry, completed: !entry.completed } : entry
+                      )
+                    )
                     startUpdate(async () => {
-                      await toggleChecklistItem(item.id, slug, !item.completed)
-                      onChanged?.()
+                      const result = await toggleChecklistItem(item.id, slug, !item.completed)
+                      if (result.error) {
+                        setOrderedItems(items)
+                      } else {
+                        onChanged?.()
+                      }
                     })
                   }}
                   onDelete={() => {
+                    setOrderedItems((current) => current.filter((entry) => entry.id !== item.id))
                     startUpdate(async () => {
-                      await deleteChecklistItem(item.id, slug)
-                      onChanged?.()
+                      const result = await deleteChecklistItem(item.id, slug)
+                      if (result.error) {
+                        setOrderedItems(items)
+                      } else {
+                        onChanged?.()
+                      }
                     })
                   }}
                 />
@@ -241,7 +301,7 @@ export function TaskChecklistSection({
       )}
 
       {canEdit ? (
-        <form action={addAction} className="flex gap-2">
+        <form ref={formRef} action={addAction} className="flex gap-2">
           <input type="hidden" name="taskId" value={taskId} />
           <input type="hidden" name="slug" value={slug} />
           <Input name="title" placeholder="Add checklist item..." required />

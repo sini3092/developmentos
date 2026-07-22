@@ -9,6 +9,7 @@ import type {
   Profile,
 } from "@/lib/database.types"
 import { createClient } from "@/lib/supabase/server"
+import { ensureLoreSectionsForEntry, getLoreSectionsForEntry } from "@/lib/lore/sections"
 
 async function attachAuthors<T extends { author_id: string | null }>(
   rows: T[]
@@ -171,10 +172,18 @@ export async function getLoreEntry(
       ]
     }) ?? []
 
+  const sections = await ensureLoreSectionsForEntry(
+    supabase,
+    entry.id,
+    entry.entry_type,
+    entry.content
+  )
+
   return {
     ...withAuthor,
     versions: await attachVersionAuthors(versions ?? []),
     relationships,
+    sections,
   }
 }
 

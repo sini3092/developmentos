@@ -125,6 +125,7 @@ export function TaskBoardLive({
   const skipTasksSyncRef = useRef(false)
   const selectedTaskIdRef = useRef<string | null>(null)
   const taskCacheRef = useRef(new Map<string, TaskDetail>())
+  const detailFetchGenRef = useRef(new Map<string, number>())
   const prefetchingRef = useRef(new Set<string>())
   const openedFromUrlRef = useRef(false)
 
@@ -166,12 +167,22 @@ export function TaskBoardLive({
   }, [filters, slug])
 
   const loadTaskDetail = useCallback(
-    async (taskId: string) => {
-      const cached = taskCacheRef.current.get(taskId)
-      if (cached) return cached
+    async (taskId: string, options?: { bypassCache?: boolean }) => {
+      if (!options?.bypassCache) {
+        const cached = taskCacheRef.current.get(taskId)
+        if (cached) return cached
+      }
+
+      const generation = (detailFetchGenRef.current.get(taskId) ?? 0) + 1
+      detailFetchGenRef.current.set(taskId, generation)
 
       const supabase = createClient()
       const nextTask = await fetchTaskDetailClient(supabase, projectId, taskId)
+
+      if (detailFetchGenRef.current.get(taskId) !== generation) {
+        return null
+      }
+
       if (nextTask) {
         taskCacheRef.current.set(taskId, nextTask)
       }
@@ -192,7 +203,7 @@ export function TaskBoardLive({
     if (!taskId) return
 
     taskCacheRef.current.delete(taskId)
-    const nextTask = await loadTaskDetail(taskId)
+    const nextTask = await loadTaskDetail(taskId, { bypassCache: true })
     if (!nextTask) return
 
     setSelectedTask(nextTask)

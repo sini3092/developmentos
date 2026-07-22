@@ -6,7 +6,7 @@ export type CalendarEventTone = "default" | "info" | "success" | "warning" | "da
 
 export type CalendarEvent = {
   id: string
-  type: "task" | "milestone"
+  type: "task" | "milestone" | "personal"
   date: string
   title: string
   subtitle: string
@@ -14,6 +14,8 @@ export type CalendarEvent = {
   projectName: string
   projectColor: string
   tone: CalendarEventTone
+  description?: string | null
+  notifyOnDay?: boolean
 }
 
 export type CalendarProjectOption = Pick<Project, "id" | "name" | "slug" | "color">
@@ -37,6 +39,7 @@ function milestoneTone(status: MilestoneStatus, date: string): CalendarEventTone
 
 export async function getCalendarData(
   workspaceId: string,
+  userId: string,
   year: number,
   month: number,
   projectSlug?: string
@@ -61,10 +64,42 @@ export async function getCalendarData(
   const projectById = new Map(projectList.map((project) => [project.id, project]))
 
   if (projectIds.length === 0) {
-    return { events: [] as CalendarEvent[], projects: projectList }
+    const { data: personalEvents } = await supabase
+      .from("calendar_events")
+      .select("id, title, description, event_date, notify_on_day")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .gte("event_date", start)
+      .lte("event_date", end)
+
+    const events: CalendarEvent[] = (personalEvents ?? []).map((personal) => {
+      const today = new Date().toISOString().slice(0, 10)
+      return {
+        id: personal.id,
+        type: "personal" as const,
+        date: personal.event_date,
+        title: personal.title,
+        subtitle: "Personal",
+        href: `/calendar?month=${personal.event_date.slice(0, 7)}`,
+        projectName: "My calendar",
+        projectColor: "amber",
+        tone:
+          personal.event_date < today
+            ? "warning"
+            : personal.event_date === today
+              ? "info"
+              : "default",
+        description: personal.description,
+        notifyOnDay: personal.notify_on_day,
+      }
+    })
+
+    events.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title))
+
+    return { events, projects: projectList }
   }
 
-  const [{ data: tasks }, { data: milestones }] = await Promise.all([
+  const [{ data: tasks }, { data: milestones }, { data: personalEvents }] = await Promise.all([
     supabase
       .from("tasks")
       .select("id, identifier, title, due_date, status, project_id")
@@ -82,6 +117,13 @@ export async function getCalendarData(
       .gte("target_date", start)
       .lte("target_date", end)
       .neq("status", "cancelled"),
+    supabase
+      .from("calendar_events")
+      .select("id, title, description, event_date, notify_on_day")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .gte("event_date", start)
+      .lte("event_date", end),
   ])
 
   const events: CalendarEvent[] = []
@@ -120,10 +162,28 @@ export async function getCalendarData(
     })
   }
 
+  for (const personal of personalEvents ?? []) {
+    const today = new Date().toISOString().slice(0, 10)
+    events.push({
+      id: personal.id,
+      type: "personal",
+      date: personal.event_date,
+      title: personal.title,
+      subtitle: "Personal",
+      href: `/calendar?month=${personal.event_date.slice(0, 7)}`,
+      projectName: "My calendar",
+      projectColor: "amber",
+      tone: personal.event_date < today ? "warning" : personal.event_date === today ? "info" : "default",
+      description: personal.description,
+      notifyOnDay: personal.notify_on_day,
+    })
+  }
+
   events.sort((a, b) => {
     const dateCompare = a.date.localeCompare(b.date)
     if (dateCompare !== 0) return dateCompare
-    if (a.type !== b.type) return a.type === "milestone" ? -1 : 1
+    const typeOrder = { personal: 0, milestone: 1, task: 2 }
+    if (a.type !== b.type) return typeOrder[a.type] - typeOrder[b.type]
     return a.title.localeCompare(b.title)
   })
 

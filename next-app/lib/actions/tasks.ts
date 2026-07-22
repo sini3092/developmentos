@@ -15,6 +15,16 @@ export type TaskActionState = {
   error?: string
   success?: string
   taskId?: string
+  checklistItem?: {
+    id: string
+    task_id: string
+    title: string
+    completed: boolean
+    position: number
+    completed_by: string | null
+    completed_at: string | null
+    created_at: string
+  }
 }
 
 export async function createTask(
@@ -412,17 +422,24 @@ export async function addChecklistItem(
 
   const position = (existing?.[0]?.position ?? -1) + 1
 
-  const { error } = await supabase.from("task_checklist_items").insert({
-    task_id: taskId,
-    title,
-    position,
-  })
+  const { data, error } = await supabase
+    .from("task_checklist_items")
+    .insert({
+      task_id: taskId,
+      title,
+      position,
+    })
+    .select("id, title, position, completed, task_id, completed_by, completed_at, created_at")
+    .single()
 
   if (error) {
     return { error: error.message }
   }
 
-  return { success: "Checklist item added." }
+  revalidatePath(`/projects/${slug}/tasks`)
+  revalidatePath(`/projects/${slug}/tasks/board`)
+
+  return { success: "Checklist item added.", checklistItem: data }
 }
 
 export async function toggleChecklistItem(
@@ -448,6 +465,9 @@ export async function toggleChecklistItem(
     return { error: error.message }
   }
 
+  revalidatePath(`/projects/${slug}/tasks`)
+  revalidatePath(`/projects/${slug}/tasks/board`)
+
   return { success: true }
 }
 
@@ -461,6 +481,9 @@ export async function deleteChecklistItem(itemId: string, slug: string) {
   if (error) {
     return { error: error.message }
   }
+
+  revalidatePath(`/projects/${slug}/tasks`)
+  revalidatePath(`/projects/${slug}/tasks/board`)
 
   return { success: true }
 }
@@ -485,6 +508,9 @@ export async function reorderChecklistItems(
   if (failed?.error) {
     return { error: failed.error.message }
   }
+
+  revalidatePath(`/projects/${slug}/tasks`)
+  revalidatePath(`/projects/${slug}/tasks/board`)
 
   return { success: true }
 }

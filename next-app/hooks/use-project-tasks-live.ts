@@ -82,6 +82,19 @@ export function useProjectTasksLive({
           schedule(taskId || null)
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_checklist_items",
+        },
+        (payload) => {
+          const record = payload.eventType === "DELETE" ? payload.old : payload.new
+          const taskId = String((record as { task_id?: string }).task_id ?? "")
+          schedule(taskId || null)
+        }
+      )
       .subscribe()
 
     return () => {

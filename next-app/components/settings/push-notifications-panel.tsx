@@ -52,6 +52,7 @@ export function PushNotificationsPanel({
     push_task_blocked: true,
     push_roadmap_update: false,
     push_mentioned: true,
+    push_calendar_reminder: true,
   }
 
   function handleEnablePush() {
@@ -211,6 +212,11 @@ export function PushNotificationsPanel({
               id: "push_roadmap_update",
               label: "Roadmap updates",
               checked: prefs.push_roadmap_update,
+            },
+            {
+              id: "push_calendar_reminder",
+              label: "Personal calendar reminders",
+              checked: prefs.push_calendar_reminder ?? true,
             },
           ].map((item) => (
             <div key={item.id} className="flex items-center justify-between gap-4">

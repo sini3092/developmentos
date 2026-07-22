@@ -27,6 +27,7 @@ type LoreBrowseProps = {
   description?: string
   categoryHref?: string
   initialCanon?: CanonStatus | "all"
+  initialSearch?: string
   canEdit: boolean
 }
 
@@ -39,11 +40,12 @@ export function LoreBrowse({
   description,
   categoryHref,
   initialCanon = "all",
+  initialSearch = "",
   canEdit,
 }: LoreBrowseProps) {
   const category = categoryHref ? LORE_CATEGORY_BY_HREF[categoryHref] : null
   const [view, setView] = useState<"grid" | "list">("grid")
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useState(initialSearch)
   const [typeFilter, setTypeFilter] = useState<LoreEntryType | "all">("all")
   const [canonFilter, setCanonFilter] = useState<CanonStatus | "all">(initialCanon)
 

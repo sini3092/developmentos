@@ -32,7 +32,12 @@ export function LoreSidebar({ slug }: LoreSidebarProps) {
                 : item.href === "browse"
                   ? pathname === `${basePath}/browse` ||
                     pathname.startsWith(`${basePath}/browse/`)
-                  : pathname === href || pathname.startsWith(`${href}/`)
+                  : item.href === "collections"
+                    ? pathname === `${basePath}/collections` ||
+                      pathname.startsWith(`${basePath}/collections/`)
+                  : item.href === "search"
+                    ? pathname === `${basePath}/search`
+                    : pathname === href || pathname.startsWith(`${href}/`)
 
           return (
             <Link

@@ -1,15 +1,20 @@
 "use client"
 
 import Link from "next/link"
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 import { ArrowLeft } from "lucide-react"
 
-import { LoreVersionsPanel } from "@/components/knowledge/document-versions-panel"
+import { LoreVersionsPanel } from "@/components/lore/lore-versions-panel"
 import { LoreRelationshipsPanel } from "@/components/knowledge/lore-relationships-panel"
 import { RichTextContent } from "@/components/knowledge/rich-text-content"
 import { RichTextEditor } from "@/components/knowledge/rich-text-editor"
 import { updateLoreEntry } from "@/lib/actions/knowledge"
-import type { LoreEntry, LoreEntryDetail } from "@/lib/database.types"
+import { LoreSectionsEditor } from "@/components/lore/lore-sections-editor"
+import { LoreLinkInserter } from "@/components/lore/lore-link-inserter"
+import { LoreCanonChangeFields } from "@/components/lore/lore-canon-change-fields"
+import { LoreReviewPanel } from "@/components/lore/lore-review-panel"
+import type { LoreReviewRequestWithAuthor } from "@/lib/auth/lore-collaboration-context"
+import type { LoreEntry, LoreEntryDetail, Profile } from "@/lib/database.types"
 import {
   CANON_STATUSES,
   CANON_STATUS_LABELS,
@@ -27,12 +32,33 @@ type LoreEntryEditorProps = {
   entry: LoreEntryDetail
   slug: string
   otherEntries: Array<Pick<LoreEntry, "id" | "name" | "slug">>
+  members: Array<{ profile: Profile | null }>
+  pendingReview: LoreReviewRequestWithAuthor | null
   canEdit: boolean
+  canReview: boolean
 }
 
-export function LoreEntryEditor({ entry, slug, otherEntries, canEdit }: LoreEntryEditorProps) {
+export function LoreEntryEditor({
+  entry,
+  slug,
+  otherEntries,
+  members,
+  pendingReview,
+  canEdit,
+  canReview,
+}: LoreEntryEditorProps) {
   const [state, formAction, pending] = useActionState(updateLoreEntry, {})
+  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null)
   const initialDoc = getInitialEditorDoc(entry.content, entry.content_json, entry.content_format)
+
+  async function handleInsertLink(snippet: string) {
+    try {
+      await navigator.clipboard.writeText(snippet)
+      setCopiedSnippet(snippet)
+    } catch {
+      setCopiedSnippet(null)
+    }
+  }
 
   if (!canEdit) {
     return (
@@ -91,6 +117,11 @@ export function LoreEntryEditor({ entry, slug, otherEntries, canEdit }: LoreEntr
             {state.success}
           </p>
         ) : null}
+        {copiedSnippet ? (
+          <p className="rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-sm text-info">
+            Copied <code className="rounded bg-muted px-1">{copiedSnippet}</code> — paste into content.
+          </p>
+        ) : null}
         <div className="space-y-2">
           <Label htmlFor="name">Name</Label>
           <Input id="name" name="name" defaultValue={entry.name} required />
@@ -129,15 +160,42 @@ export function LoreEntryEditor({ entry, slug, otherEntries, canEdit }: LoreEntr
             ))}
           </select>
         </div>
+        <LoreCanonChangeFields
+          canonStatus={entry.canon_status}
+          defaultSummary={entry.change_summary}
+        />
         <div className="space-y-2">
-          <Label>Content</Label>
+          <Label>Legacy content</Label>
+          <p className="text-xs text-muted-foreground">
+            Main body field kept for compatibility. Prefer structured sections below.
+          </p>
+          <LoreLinkInserter entries={otherEntries} onInsert={handleInsertLink} />
           <RichTextEditor name="contentJson" initialDoc={initialDoc} />
         </div>
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save entry"}
         </Button>
       </form>
+      <LoreSectionsEditor
+        entryId={entry.id}
+        slug={slug}
+        entrySlug={entry.slug}
+        entryType={entry.entry_type}
+        canonStatus={entry.canon_status}
+        changeSummary={entry.change_summary}
+        sections={entry.sections}
+        linkEntries={otherEntries}
+      />
       <aside className="space-y-4">
+        <LoreReviewPanel
+          entryId={entry.id}
+          slug={slug}
+          entrySlug={entry.slug}
+          canonStatus={entry.canon_status}
+          pendingReview={pendingReview}
+          canEdit={canEdit}
+          canReview={canReview}
+        />
         <LoreRelationshipsPanel
           slug={slug}
           entryId={entry.id}
