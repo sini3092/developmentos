@@ -28,8 +28,13 @@ function revalidateDesignPaths(slug: string, docSlug?: string) {
 
 function revalidateLorePaths(slug: string, entrySlug?: string) {
   revalidatePath(`/projects/${slug}/lore`)
+  revalidatePath(`/projects/${slug}/lore/browse`)
+  revalidatePath(`/projects/${slug}/lore/drafts`)
+  revalidatePath(`/projects/${slug}/lore/review`)
+  revalidatePath(`/projects/${slug}/lore/archived`)
   if (entrySlug) {
     revalidatePath(`/projects/${slug}/lore/${entrySlug}`)
+    revalidatePath(`/projects/${slug}/lore/${entrySlug}/edit`)
   }
 }
 

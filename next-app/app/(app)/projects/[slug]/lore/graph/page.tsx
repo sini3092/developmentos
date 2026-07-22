@@ -1,8 +1,5 @@
-import { Network } from "lucide-react"
-
 import { LoreGraphView } from "@/components/knowledge/lore-graph-view"
-import { PageHeader } from "@/components/layout/page-header"
-import { ProjectNav } from "@/components/projects/project-nav"
+import { LoreProjectLayout } from "@/components/lore/lore-project-layout"
 import { requireProject } from "@/lib/auth/project-context"
 import { getLoreGraph } from "@/lib/auth/knowledge-context"
 
@@ -16,14 +13,13 @@ export default async function LoreGraphPage({ params }: LoreGraphPageProps) {
   const graph = await getLoreGraph(project.id)
 
   return (
-    <div className="flex flex-1 flex-col">
-      <PageHeader
-        title="Lore graph"
-        description={`Relationship map for ${project.name}`}
-        icon={Network}
-      />
-      <ProjectNav slug={slug} canManage={canManage} />
+    <LoreProjectLayout
+      slug={slug}
+      canManage={canManage}
+      title="Lore graph"
+      description={`Relationship map for ${project.name}`}
+    >
       <LoreGraphView slug={slug} graph={graph} />
-    </div>
+    </LoreProjectLayout>
   )
 }

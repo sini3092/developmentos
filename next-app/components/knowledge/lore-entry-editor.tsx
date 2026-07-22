@@ -158,12 +158,18 @@ export function LoreEntryEditor({ entry, slug, otherEntries, canEdit }: LoreEntr
   )
 }
 
-export function LoreEntryHeader({ slug }: { slug: string }) {
+export function LoreEntryHeader({
+  slug,
+  entrySlug,
+}: {
+  slug: string
+  entrySlug?: string
+}) {
   return (
     <Button variant="outline" size="sm" asChild>
-      <Link href={`/projects/${slug}/lore`}>
+      <Link href={entrySlug ? `/projects/${slug}/lore/${entrySlug}` : `/projects/${slug}/lore`}>
         <ArrowLeft className="size-4" />
-        Back to lore library
+        {entrySlug ? "Back to entry" : "Back to lore"}
       </Link>
     </Button>
   )

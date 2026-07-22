@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react"
 import {
   BarChart3,
+  BookOpen,
   Calendar,
   FolderKanban,
   GitBranch,
@@ -8,6 +9,7 @@ import {
   Inbox,
   ListTodo,
   MessageSquare,
+  ScrollText,
   Settings,
 } from "lucide-react"
 
@@ -23,6 +25,8 @@ export const navIcons: Record<NavItemConfig["icon"], LucideIcon> = {
   roadmap: BarChart3,
   chat: MessageSquare,
   github: GitBranch,
+  lore: ScrollText,
+  design: BookOpen,
 }
 
 export function getNavIcon(icon: NavItemConfig["icon"] | ProjectSectionNavItem["icon"]) {

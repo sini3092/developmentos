@@ -1,35 +1,32 @@
-import { LoreHome } from "@/components/lore/lore-home"
+import { LoreBrowse } from "@/components/lore/lore-browse"
 import { LoreProjectLayout } from "@/components/lore/lore-project-layout"
-import { getLoreOverview } from "@/lib/auth/lore-context"
+import { getFilteredLoreEntries } from "@/lib/auth/lore-context"
 import { requireProject } from "@/lib/auth/project-context"
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context"
 
-type LorePageProps = {
+type LoreBrowsePageProps = {
   params: Promise<{ slug: string }>
 }
 
-export default async function LorePage({ params }: LorePageProps) {
+export default async function LoreBrowsePage({ params }: LoreBrowsePageProps) {
   const { slug } = await params
   const workspaceContext = await requireWorkspaceContext()
   const { project, canManage, currentMembership } = await requireProject(slug)
-  const overview = await getLoreOverview(project.id)
+  const entries = await getFilteredLoreEntries(project.id, { excludeArchived: true })
 
   const canEdit =
     canManage ||
     (currentMembership !== null && currentMembership.role !== "viewer")
 
   return (
-    <LoreProjectLayout
-      slug={slug}
-      canManage={canManage}
-      description={`World bible for ${project.name}`}
-    >
-      <LoreHome
+    <LoreProjectLayout slug={slug} canManage={canManage} title="Browse Lore">
+      <LoreBrowse
         slug={slug}
-        projectName={project.name}
         workspaceId={workspaceContext.activeWorkspace!.id}
         projectId={project.id}
-        overview={overview}
+        entries={entries}
+        title="Browse all lore"
+        description="Filter by type, canon status, or search across the world bible."
         canEdit={canEdit}
       />
     </LoreProjectLayout>
