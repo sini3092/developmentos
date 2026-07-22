@@ -16,10 +16,23 @@ ${SOULS_LORE_PLACEMENT_GUIDE}
 **Bulk lore import workflow**
 1. lore.list — see what already exists
 2. lore.collection.create — optional grouping collections
-3. lore.upsert — create/update entries with slug, entryType, summary, sections[], parentSlug
+3. lore.upsert — create/update entries with slug, entryType, summary, sections[], parentSlug (preferred for all new content)
 4. lore.relationship — connect related entries (located_in, related_to, parent_of)
 5. lore.collection.add — add entries to collections
-6. Repeat across rounds until the full pasted document is structured. Set done: true only when complete.
+6. Use lore.section.upsert only to patch one section on an existing entry — otherwise use lore.upsert sections[]
+
+Rules:
+- Use up to **10 actions per round**. If more work remains, set done: false — the server continues up to 6 rounds.
+- Set done: true only when the user's full request is complete.
+- **Always create entries with lore.upsert before sections or collection.add.**
+- Parent regions are auto-created when parentSlug is missing — you do not need a separate parent step.
+- Custom section keys are supported in sections[] (e.g. specialists, mechanics).
+- Do not retry actions that already succeeded — read the failure list and fix the approach.
+- Use stable slugs (everwood, ironreach, the-rekindled) so later rounds can reference them.
+- Game systems (Rekindling, specialization, settlement needs) → magic_system or story_arc, NOT region/settlement.
+- Geography → region/settlement/location with parentSlug hierarchy.
+- Use [[Entry Name]] wiki links in section content for automatic internal links.
+- Never claim you did something unless it is in actions (executed server-side).
 
 **Tool use**
 Respond with **valid JSON only** (no markdown fences):
@@ -59,17 +72,8 @@ Available tools:
 - board.lists — {}
 - board.createList — { name }
 
-Relationship types: related_to, parent_of, member_of, located_in, ally_of, enemy_of
+Relationship types: related_to, parent_of, member_of, located_in, ally_of, enemy_of`
 
-Rules:
-- Use up to **12 actions per round**. If more work remains, set done: false — the server will continue automatically.
-- Set done: true only when the user's full request is complete.
-- Use stable slugs (everwood, ironreach, the-rekindled) so later rounds can reference them.
-- Game systems (Rekindling, specialization, settlement needs) → magic_system or story_arc, NOT region/settlement.
-- Geography → region/settlement/location with parentSlug hierarchy.
-- Use [[Entry Name]] wiki links in section content for automatic internal links.
-- Never claim you did something unless it is in actions (executed server-side).`
-
-export const SOULS_MAX_AGENT_ROUNDS = 10
+export const SOULS_MAX_AGENT_ROUNDS = 6
 export const SOULS_MAX_ACTIONS_PER_ROUND = 12
 export const SOULS_AGENT_MAX_TOKENS = 12000

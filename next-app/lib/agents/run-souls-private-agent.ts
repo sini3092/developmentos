@@ -47,9 +47,40 @@ function summarizeActionResults(results: SoulsActionResult[]) {
           ? String(result.after.slug)
           : null
       const status = result.status === "success" ? "ok" : "failed"
-      return `- [${status}] ${result.summary ?? result.label}${slug ? ` (slug: ${slug})` : ""}`
+      const errorSuffix = result.status === "error" && result.error ? ` — ${result.error}` : ""
+      return `- [${status}] ${result.summary ?? result.label}${slug ? ` (slug: ${slug})` : ""}${errorSuffix}`
     })
     .join("\n")
+}
+
+function summarizeFailures(results: SoulsActionResult[]) {
+  return results
+    .filter((result) => result.status === "error")
+    .map((result) => `- ${result.label}: ${result.error ?? "Unknown error"}`)
+    .join("\n")
+}
+
+async function persistSoulsWorkingState(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  assistantMessageId: string,
+  input: {
+    workingLabel: string
+    actions: SoulsActionResult[]
+    rounds: number
+  }
+) {
+  await supabase
+    .from("souls_private_messages")
+    .update({
+      metadata: JSON.parse(
+        JSON.stringify({
+          workingLabel: input.workingLabel,
+          actions: input.actions,
+          rounds: input.rounds,
+        })
+      ) as Json,
+    })
+    .eq("id", assistantMessageId)
 }
 
 function revalidateSoulsProjectPaths(projectSlug: string) {
@@ -133,11 +164,13 @@ export async function runSoulsPrivateAgent(input: {
   const replyParts: string[] = []
   let round = 0
   let done = false
+  let idleRounds = 0
 
   try {
     while (!done && round < SOULS_MAX_AGENT_ROUNDS) {
       round += 1
 
+      const failures = summarizeFailures(allActionResults)
       const [projectContext, loreContext, chatContext] = await Promise.all([
         buildAgentProjectContext(supabase, input.projectId, input.workspaceId),
         buildSoulsLoreContext(input.projectId),
@@ -154,12 +187,17 @@ export async function runSoulsPrivateAgent(input: {
         round > 1
           ? [
               "",
-              `## Continuation round ${round}`,
+              `## Continuation round ${round}/${SOULS_MAX_AGENT_ROUNDS}`,
               "Actions completed in previous rounds:",
               summarizeActionResults(allActionResults) || "(none yet)",
+              failures
+                ? `\nFailed actions — fix these before retrying duplicates:\n${failures}`
+                : "",
               "",
               "Continue structuring everything from the original request.",
-              "Set done: true only when every part of the pasted lore is placed in the correct entries, sections, hierarchy, links, and collections.",
+              "Prefer lore.upsert with sections[] to create entries and content in one step.",
+              "Do not repeat actions that already succeeded.",
+              "Set done: true only when every part of the pasted lore is placed correctly.",
             ].join("\n")
           : ""
 
@@ -173,18 +211,14 @@ export async function runSoulsPrivateAgent(input: {
         .filter(Boolean)
         .join("\n")
 
-      await supabase
-        .from("souls_private_messages")
-        .update({
-          metadata: {
-            workingLabel:
-              round === 1
-                ? "Souls is structuring your lore…"
-                : `Souls is continuing (round ${round}/${SOULS_MAX_AGENT_ROUNDS})…`,
-            actions: JSON.parse(JSON.stringify(allActionResults)),
-          },
-        })
-        .eq("id", input.assistantMessageId)
+      await persistSoulsWorkingState(supabase, input.assistantMessageId, {
+        workingLabel:
+          round === 1
+            ? "Souls is structuring your lore…"
+            : `Souls is continuing (round ${round}/${SOULS_MAX_AGENT_ROUNDS})…`,
+        actions: allActionResults,
+        rounds: round,
+      })
 
       const raw = await chatWithOpenRouter({
         apiKey: workspace.openrouter_api_key,
@@ -203,17 +237,15 @@ export async function runSoulsPrivateAgent(input: {
       }
 
       if (parsed.actions && parsed.actions.length > 0) {
-        await supabase
-          .from("souls_private_messages")
-          .update({
-            metadata: {
-              workingLabel: `Souls is applying changes (round ${round})…`,
-              actions: JSON.parse(JSON.stringify(allActionResults)),
-            },
-          })
-          .eq("id", input.assistantMessageId)
+        idleRounds = 0
 
         for (const action of parsed.actions) {
+          await persistSoulsWorkingState(supabase, input.assistantMessageId, {
+            workingLabel: `Souls is applying: ${action.label}`,
+            actions: allActionResults,
+            rounds: round,
+          })
+
           const result = await executeSoulsPrivateTool({
             tool: action.tool,
             label: action.label,
@@ -224,10 +256,25 @@ export async function runSoulsPrivateAgent(input: {
             userId: input.userId,
           })
           allActionResults.push(result)
+
+          await persistSoulsWorkingState(supabase, input.assistantMessageId, {
+            workingLabel:
+              round === 1
+                ? "Souls is structuring your lore…"
+                : `Souls is continuing (round ${round}/${SOULS_MAX_AGENT_ROUNDS})…`,
+            actions: allActionResults,
+            rounds: round,
+          })
         }
+      } else {
+        idleRounds += 1
       }
 
-      done = parsed.done === true || (parsed.actions?.length ?? 0) === 0
+      const hasFailures = allActionResults.some((result) => result.status === "error")
+      done =
+        parsed.done === true ||
+        ((parsed.actions?.length ?? 0) === 0 && !hasFailures) ||
+        idleRounds >= 2
     }
 
     const finalReply =

@@ -12,17 +12,31 @@ import { cn } from "@/lib/utils"
 const COLLAPSE_CHAR_LIMIT = 480
 const COLLAPSE_LINE_LIMIT = 8
 
-function messageSignature(messages: SoulsPrivateMessage[]) {
-  return messages
-    .map((message) => {
-      const metadata = parseSoulsMessageMetadata(message.metadata)
-      return `${message.id}:${message.status}:${message.body.length}:${message.created_at}:${metadata.actions?.length ?? 0}:${metadata.workingLabel ?? ""}`
-    })
-    .join("|")
+function messageSignature(messages: SoulsPrivateMessage[], workingLabel?: string) {
+  return [
+    messages
+      .map((message) => {
+        const metadata = parseSoulsMessageMetadata(message.metadata)
+        return `${message.id}:${message.status}:${message.body.length}:${message.created_at}:${metadata.actions?.length ?? 0}`
+      })
+      .join("|"),
+    workingLabel ?? "",
+  ].join("::")
 }
 
 export function SoulsMessageList({ messages }: { messages: SoulsPrivateMessage[] }) {
-  const signature = useMemo(() => messageSignature(messages), [messages])
+  const workingMessage = messages.find(
+    (message) => message.role === "assistant" && message.status === "working"
+  )
+  const workingMetadata = workingMessage
+    ? parseSoulsMessageMetadata(workingMessage.metadata)
+    : null
+  const workingLabel = workingMetadata?.workingLabel
+
+  const signature = useMemo(
+    () => messageSignature(messages, workingLabel),
+    [messages, workingLabel]
+  )
   const scrollRef = useStickToBottom<HTMLDivElement>(signature)
 
   if (messages.length === 0) {
@@ -44,18 +58,38 @@ export function SoulsMessageList({ messages }: { messages: SoulsPrivateMessage[]
     >
       <div className="flex flex-col gap-4">
         {messages.map((message) => (
-          <SoulsMessageBubble key={message.id} message={message} />
+          <SoulsMessageBubble
+            key={message.id}
+            message={message}
+            pinWorkingToBottom={Boolean(workingMessage)}
+          />
         ))}
+
+        {workingMessage ? (
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold tracking-wide text-primary uppercase">
+              Souls
+            </p>
+            <SoulsWorkingSteps label={workingLabel} />
+          </div>
+        ) : null}
       </div>
     </div>
   )
 }
 
-function SoulsMessageBubble({ message }: { message: SoulsPrivateMessage }) {
+function SoulsMessageBubble({
+  message,
+  pinWorkingToBottom,
+}: {
+  message: SoulsPrivateMessage
+  pinWorkingToBottom: boolean
+}) {
   const metadata = parseSoulsMessageMetadata(message.metadata)
   const isUser = message.role === "user"
   const isWorking = message.status === "working"
   const isError = message.status === "error"
+  const showWorkingInline = isWorking && !pinWorkingToBottom
 
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -65,7 +99,7 @@ function SoulsMessageBubble({ message }: { message: SoulsPrivateMessage }) {
           isUser ? "items-end" : "items-start"
         )}
       >
-        {!isUser ? (
+        {!isUser && !isWorking ? (
           <p className="text-[10px] font-semibold tracking-wide text-primary uppercase">
             Souls
           </p>
@@ -78,7 +112,7 @@ function SoulsMessageBubble({ message }: { message: SoulsPrivateMessage }) {
           </div>
         ) : null}
 
-        {isWorking ? (
+        {showWorkingInline ? (
           <SoulsWorkingSteps label={metadata.workingLabel} />
         ) : message.body ? (
           <div

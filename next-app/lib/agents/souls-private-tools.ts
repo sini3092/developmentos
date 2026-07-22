@@ -2,6 +2,7 @@ import { createBoardList } from "@/lib/actions/board-lists"
 import { executeSoulsLoreTool } from "@/lib/agents/souls-lore-tools"
 import type { TaskPriority } from "@/lib/database.types"
 import type { SoulsActionResult } from "@/lib/souls/message-metadata"
+import { formatToolError } from "@/lib/agents/tool-errors"
 import { createClient } from "@/lib/supabase/server"
 
 type ToolInput = Record<string, unknown>
@@ -221,7 +222,7 @@ export async function executeSoulsPrivateTool(input: {
       tool: input.tool,
       label: input.label,
       status: "error",
-      error: error instanceof Error ? error.message : "Action failed.",
+      error: formatToolError(error),
     }
   }
 }
