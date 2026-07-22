@@ -93,7 +93,7 @@ export function SoulsSidePanel() {
     if (effectiveLoreSlug) {
       return "Ask Souls to structure this lore, place it in the world, or create tasks…"
     }
-    return "Ask Souls privately — lore, tasks, board lists…"
+    return "Ask Souls privately — paste lore docs, structure regions, or create tasks…"
   }, [effectiveLoreSlug])
 
   if (!open) {

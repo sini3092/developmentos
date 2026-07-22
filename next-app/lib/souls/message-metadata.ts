@@ -14,6 +14,7 @@ export type SoulsActionResult = {
 export type SoulsMessageMetadata = {
   actions?: SoulsActionResult[]
   workingLabel?: string
+  rounds?: number
   attachedLore?: {
     name: string
     slug: string

@@ -1,10 +1,19 @@
 import { createBoardList } from "@/lib/actions/board-lists"
-import type { CanonStatus, LoreEntryType, TaskPriority } from "@/lib/database.types"
+import { executeSoulsLoreTool } from "@/lib/agents/souls-lore-tools"
+import type { TaskPriority } from "@/lib/database.types"
 import type { SoulsActionResult } from "@/lib/souls/message-metadata"
-import { slugify } from "@/lib/utils/format"
 import { createClient } from "@/lib/supabase/server"
 
 type ToolInput = Record<string, unknown>
+
+const LORE_TOOLS = new Set([
+  "lore.list",
+  "lore.upsert",
+  "lore.section.upsert",
+  "lore.relationship",
+  "lore.collection.create",
+  "lore.collection.add",
+])
 
 export async function executeSoulsPrivateTool(input: {
   tool: string
@@ -18,82 +27,14 @@ export async function executeSoulsPrivateTool(input: {
   const supabase = await createClient()
 
   try {
+    if (LORE_TOOLS.has(input.tool)) {
+      const result = await executeSoulsLoreTool({ ...input, supabase })
+      if (result) {
+        return result
+      }
+    }
+
     switch (input.tool) {
-      case "lore.list": {
-        const { data } = await supabase
-          .from("lore_entries")
-          .select("id, name, slug, entry_type, canon_status, summary")
-          .eq("project_id", input.projectId)
-          .neq("canon_status", "archived")
-          .order("name")
-          .limit(80)
-
-        return {
-          tool: input.tool,
-          label: input.label,
-          status: "success",
-          summary: `Loaded ${data?.length ?? 0} lore entries`,
-          after: { count: data?.length ?? 0, entries: data ?? [] },
-        }
-      }
-
-      case "lore.upsert": {
-        const name = String(input.toolInput.name ?? "").trim()
-        if (!name) {
-          throw new Error("Lore name is required.")
-        }
-
-        const entryId = input.toolInput.entryId ? String(input.toolInput.entryId) : null
-        let before: Record<string, unknown> | undefined
-
-        if (entryId) {
-          const { data: existing } = await supabase
-            .from("lore_entries")
-            .select("id, name, slug, entry_type, summary, content, canon_status")
-            .eq("id", entryId)
-            .eq("project_id", input.projectId)
-            .maybeSingle()
-          before = existing ?? undefined
-        }
-
-        const values = {
-          workspace_id: input.workspaceId,
-          project_id: input.projectId,
-          name,
-          slug: slugify(name),
-          entry_type: (input.toolInput.entryType as LoreEntryType) ?? "other",
-          summary: input.toolInput.summary ? String(input.toolInput.summary) : null,
-          content: input.toolInput.content ? String(input.toolInput.content) : "",
-          canon_status: (input.toolInput.canonStatus as CanonStatus) ?? "draft",
-          author_id: input.userId,
-          created_by: input.userId,
-          updated_at: new Date().toISOString(),
-        }
-
-        const query = entryId
-          ? supabase
-              .from("lore_entries")
-              .update(values)
-              .eq("id", entryId)
-              .eq("project_id", input.projectId)
-          : supabase.from("lore_entries").insert(values)
-
-        const { data, error } = await query.select("id, name, slug, entry_type, summary, canon_status").single()
-        if (error) {
-          throw error
-        }
-
-        return {
-          tool: input.tool,
-          label: input.label,
-          status: "success",
-          href: `/projects/${input.projectSlug}/lore/${data.slug}`,
-          summary: entryId ? `Updated ${data.name}` : `Created ${data.name}`,
-          before,
-          after: data,
-        }
-      }
-
       case "tasks.list": {
         const query = String(input.toolInput.query ?? "").trim()
         let taskQuery = supabase
