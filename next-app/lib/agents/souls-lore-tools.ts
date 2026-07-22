@@ -9,6 +9,11 @@ import type {
 import { syncLoreEntryLinks } from "@/lib/lore/internal-links"
 import { ensureLoreSectionsForEntry, getLoreSectionsForEntry, syncLoreSectionTemplates } from "@/lib/lore/sections"
 import { formatToolError } from "@/lib/agents/tool-errors"
+import {
+  findDuplicateLoreEntry,
+  mergeSummary,
+  mergeUniqueText,
+} from "@/lib/agents/souls-lore-dedup"
 import type { SoulsActionResult } from "@/lib/souls/message-metadata"
 import { slugify } from "@/lib/utils/format"
 
@@ -127,6 +132,14 @@ async function resolveOrCreateParentEntry(input: {
     return existing
   }
 
+  const duplicate = await findDuplicateLoreEntry(input.supabase, input.projectId, {
+    name: name ?? humanizeSlug(slug!),
+    slug,
+  })
+  if (duplicate) {
+    return duplicate.entry as LoreEntryRef
+  }
+
   const { data, error } = await input.supabase
     .from("lore_entries")
     .insert({
@@ -167,7 +180,7 @@ async function upsertLoreSection(
 
   if (existing) {
     const patch: { content: string; title?: string; updated_at: string } = {
-      content: section.content,
+      content: mergeUniqueText(existing.content, section.content),
       updated_at: new Date().toISOString(),
     }
     if (section.title) {
@@ -289,12 +302,23 @@ export async function executeSoulsLoreTool(input: {
       const explicitSlug = toolInput.slug ? slugify(String(toolInput.slug)) : slugify(name)
       let entryId = toolInput.entryId ? String(toolInput.entryId) : null
       let before: LoreEntryRef | undefined
+      let duplicateReason: string | null = null
 
       if (!entryId) {
-        const existing = await resolveLoreEntry(supabase, projectId, { slug: explicitSlug, name })
-        if (existing) {
-          entryId = existing.id
-          before = existing
+        const duplicate = await findDuplicateLoreEntry(supabase, projectId, {
+          name,
+          slug: explicitSlug,
+        })
+        if (duplicate) {
+          entryId = duplicate.entry.id
+          before = duplicate.entry as LoreEntryRef
+          duplicateReason = duplicate.reason
+        } else {
+          const existing = await resolveLoreEntry(supabase, projectId, { slug: explicitSlug, name })
+          if (existing) {
+            entryId = existing.id
+            before = existing
+          }
         }
       } else {
         const existing = await resolveLoreEntry(supabase, projectId, { entryId })
@@ -339,10 +363,14 @@ export async function executeSoulsLoreTool(input: {
         }
 
         if (toolInput.summary !== undefined) {
-          updatePayload.summary = String(toolInput.summary) || null
+          updatePayload.summary = before?.summary
+            ? mergeSummary(before.summary, String(toolInput.summary))
+            : String(toolInput.summary) || null
         }
         if (content !== undefined) {
-          updatePayload.content = content
+          updatePayload.content = before?.content
+            ? mergeUniqueText(before.content, content)
+            : content
         }
         if (toolInput.parentSlug || toolInput.parentName || toolInput.parentEntryId) {
           updatePayload.parent_entry_id = parentEntryId
@@ -380,7 +408,9 @@ export async function executeSoulsLoreTool(input: {
           label,
           status: "success",
           href: `/projects/${projectSlug}/lore/${data.slug}`,
-          summary: `Updated ${data.name}`,
+          summary: duplicateReason
+            ? `Merged into existing ${data.name}`
+            : `Updated ${data.name}`,
           before,
           after: data,
         }
@@ -442,27 +472,36 @@ export async function executeSoulsLoreTool(input: {
           ? slugify(String(toolInput.entrySlug))
           : slugify(createName)
 
-        const { data: created, error: createError } = await supabase
-          .from("lore_entries")
-          .insert({
-            workspace_id: workspaceId,
-            project_id: projectId,
-            name: createName,
-            slug: createSlug,
-            entry_type: normalizeEntryType(toolInput.entryType, "other"),
-            summary: toolInput.summary ? String(toolInput.summary) : null,
-            content: "",
-            canon_status: "draft",
-            author_id: userId,
-            created_by: userId,
-          })
-          .select("id, name, slug, entry_type, summary, content, canon_status, parent_entry_id")
-          .single()
+        const duplicate = await findDuplicateLoreEntry(supabase, projectId, {
+          name: createName,
+          slug: createSlug,
+        })
 
-        if (createError) {
-          throw new Error(formatToolError(createError, "Could not create lore entry for section."))
+        if (duplicate) {
+          entry = duplicate.entry as LoreEntryRef
+        } else {
+          const { data: created, error: createError } = await supabase
+            .from("lore_entries")
+            .insert({
+              workspace_id: workspaceId,
+              project_id: projectId,
+              name: createName,
+              slug: createSlug,
+              entry_type: normalizeEntryType(toolInput.entryType, "other"),
+              summary: toolInput.summary ? String(toolInput.summary) : null,
+              content: "",
+              canon_status: "draft",
+              author_id: userId,
+              created_by: userId,
+            })
+            .select("id, name, slug, entry_type, summary, content, canon_status, parent_entry_id")
+            .single()
+
+          if (createError) {
+            throw new Error(formatToolError(createError, "Could not create lore entry for section."))
+          }
+          entry = created
         }
-        entry = created
       }
 
       if (!entry) {

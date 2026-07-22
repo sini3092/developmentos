@@ -8,6 +8,7 @@ import {
   SOULS_MAX_AGENT_ROUNDS,
   SOULS_PRIVATE_SYSTEM_PROMPT,
 } from "@/lib/agents/souls-private-prompt"
+import { dedupeAgentActions } from "@/lib/agents/souls-lore-dedup"
 import { executeSoulsPrivateTool } from "@/lib/agents/souls-private-tools"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import type { Json } from "@/lib/database.types"
@@ -232,14 +233,15 @@ export async function runSoulsPrivateAgent(input: {
       })
 
       const parsed = parseSoulsAgentResponse(raw)
+      const roundActions = dedupeAgentActions(parsed.actions ?? [])
       if (parsed.reply) {
         replyParts.push(parsed.reply)
       }
 
-      if (parsed.actions && parsed.actions.length > 0) {
+      if (roundActions.length > 0) {
         idleRounds = 0
 
-        for (const action of parsed.actions) {
+        for (const action of roundActions) {
           await persistSoulsWorkingState(supabase, input.assistantMessageId, {
             workingLabel: `Souls is applying: ${action.label}`,
             actions: allActionResults,
@@ -273,7 +275,7 @@ export async function runSoulsPrivateAgent(input: {
       const hasFailures = allActionResults.some((result) => result.status === "error")
       done =
         parsed.done === true ||
-        ((parsed.actions?.length ?? 0) === 0 && !hasFailures) ||
+        (roundActions.length === 0 && !hasFailures) ||
         idleRounds >= 2
     }
 

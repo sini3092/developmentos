@@ -24,4 +24,9 @@ export const SOULS_LORE_PLACEMENT_GUIDE = [
   "- Use sections[] in lore.upsert to fill overview, geography, history, etc.",
   "- Use [[Entry Name]] wiki links in content so lore.link sync picks them up",
   "- Group related entries in collections (e.g. \"Regional Settlements\", \"Core Game Systems\")",
+  "",
+  "**Duplicate handling:**",
+  "- If the user pastes the same lore again, or entries already exist, update and merge — never create duplicates.",
+  "- Match by slug, similar name (Everwood = The Everwood), or overlapping content.",
+  "- Merge new paragraphs into existing sections instead of replacing unless the user asked to overwrite.",
 ].join("\n")

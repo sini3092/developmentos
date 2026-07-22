@@ -53,6 +53,8 @@ export async function buildSoulsLoreContext(projectId: string) {
     "## Collections",
     collectionLines,
     "",
+    "## Duplicate awareness",
+    "Existing entries are matched by slug and similar names. lore.upsert merges duplicate text instead of creating copies.",
     SOULS_LORE_PLACEMENT_GUIDE,
   ].join("\n")
 }

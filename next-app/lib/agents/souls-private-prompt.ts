@@ -28,6 +28,8 @@ Rules:
 - Parent regions are auto-created when parentSlug is missing — you do not need a separate parent step.
 - Custom section keys are supported in sections[] (e.g. specialists, mechanics).
 - Do not retry actions that already succeeded — read the failure list and fix the approach.
+- If lore already exists (same name, slug, or topic), use lore.upsert to merge — duplicates are detected automatically.
+- When the user resends similar text, merge into existing entries instead of creating new ones.
 - Use stable slugs (everwood, ironreach, the-rekindled) so later rounds can reference them.
 - Game systems (Rekindling, specialization, settlement needs) → magic_system or story_arc, NOT region/settlement.
 - Geography → region/settlement/location with parentSlug hierarchy.
