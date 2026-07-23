@@ -78,6 +78,7 @@ async function persistSoulsWorkingState(
           workingLabel: input.workingLabel,
           actions: input.actions,
           rounds: input.rounds,
+          lastActivityAt: new Date().toISOString(),
         })
       ) as Json,
     })

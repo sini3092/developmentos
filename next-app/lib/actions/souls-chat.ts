@@ -8,7 +8,9 @@ import {
   getOrCreateSoulsConversation,
   getSoulsLoreAttachment,
 } from "@/lib/auth/souls-chat-context"
+import { recoverStaleSoulsMessages } from "@/lib/souls/stale-messages"
 import { createClient } from "@/lib/supabase/server"
+import type { Json } from "@/lib/database.types"
 
 export type SoulsChatActionState = {
   error?: string
@@ -51,6 +53,8 @@ export async function sendSoulsPrivateMessage(
     projectId,
     projectSlug,
   })
+
+  await recoverStaleSoulsMessages(supabase, conversation.id)
 
   const attachedLore = attachLoreSlug
     ? await getSoulsLoreAttachment(projectId, attachLoreSlug)
@@ -132,6 +136,68 @@ export async function sendSoulsPrivateMessage(
   }
 }
 
+export async function cancelSoulsPrivateWork(conversationId: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: "You must be signed in." }
+  }
+
+  const { data: conversation } = await supabase
+    .from("souls_private_conversations")
+    .select("id")
+    .eq("id", conversationId)
+    .eq("user_id", user.id)
+    .maybeSingle()
+
+  if (!conversation) {
+    return { error: "Conversation not found." }
+  }
+
+  await recoverStaleSoulsMessages(supabase, conversationId)
+
+  const { data: working } = await supabase
+    .from("souls_private_messages")
+    .select("id, metadata")
+    .eq("conversation_id", conversationId)
+    .eq("status", "working")
+
+  if (!working?.length) {
+    return { success: "Souls is ready." }
+  }
+
+  for (const message of working) {
+    const metadata =
+      message.metadata && typeof message.metadata === "object" && !Array.isArray(message.metadata)
+        ? (message.metadata as Record<string, unknown>)
+        : {}
+    const actions = Array.isArray(metadata.actions) ? metadata.actions : []
+    const hasActions = actions.length > 0
+
+    await supabase
+      .from("souls_private_messages")
+      .update({
+        body: hasActions
+          ? "Stopped by you. The work above was saved — send \"continue\" if Souls should finish."
+          : "Stopped by you. Send a new message when you're ready.",
+        status: hasActions ? "complete" : "error",
+        metadata: JSON.parse(
+          JSON.stringify({
+            ...metadata,
+            workingLabel: undefined,
+            recoveredFromStale: true,
+          })
+        ) as Json,
+      })
+      .eq("id", message.id)
+  }
+
+  return { success: "Souls released." }
+}
+
 export async function loadSoulsPrivateChat(projectId: string, projectSlug: string, workspaceId: string) {
   const supabase = await createClient()
   const {
@@ -148,6 +214,8 @@ export async function loadSoulsPrivateChat(projectId: string, projectSlug: strin
     projectId,
     projectSlug,
   })
+
+  await recoverStaleSoulsMessages(supabase, conversation.id)
 
   const { data: messages } = await supabase
     .from("souls_private_messages")

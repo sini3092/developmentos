@@ -15,6 +15,8 @@ export type SoulsMessageMetadata = {
   actions?: SoulsActionResult[]
   workingLabel?: string
   rounds?: number
+  lastActivityAt?: string
+  recoveredFromStale?: boolean
   attachedLore?: {
     name: string
     slug: string

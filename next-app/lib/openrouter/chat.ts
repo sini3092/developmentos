@@ -20,39 +20,54 @@ export async function chatWithOpenRouter({
   messages,
   temperature = 0.4,
   maxTokens = 1200,
+  timeoutMs = 120_000,
 }: {
   apiKey: string
   model: string
   messages: OpenRouterMessage[]
   temperature?: number
   maxTokens?: number
+  timeoutMs?: number
 }) {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-      "X-Title": "DevelopmentOS",
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-    }),
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
-  const data = (await response.json()) as OpenRouterResponse
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+        "X-Title": "DevelopmentOS",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+      }),
+      signal: controller.signal,
+    })
 
-  if (!response.ok) {
-    throw new Error(data.error?.message ?? `OpenRouter error (${response.status})`)
+    const data = (await response.json()) as OpenRouterResponse
+
+    if (!response.ok) {
+      throw new Error(data.error?.message ?? `OpenRouter error (${response.status})`)
+    }
+
+    const content = data.choices?.[0]?.message?.content?.trim()
+    if (!content) {
+      throw new Error("OpenRouter returned an empty response.")
+    }
+
+    return content
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("OpenRouter request timed out.")
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
   }
-
-  const content = data.choices?.[0]?.message?.content?.trim()
-  if (!content) {
-    throw new Error("OpenRouter returned an empty response.")
-  }
-
-  return content
 }

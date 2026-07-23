@@ -1,8 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
+import { cancelSoulsPrivateWork } from "@/lib/actions/souls-chat"
 import type { SoulsPrivateMessage } from "@/lib/database.types"
+import { isSoulsMessageStale } from "@/lib/souls/stale-messages"
 import { createClient } from "@/lib/supabase/client"
 
 type UseSoulsChatLiveOptions = {
@@ -15,6 +17,7 @@ export function useSoulsChatLive({
   initialMessages,
 }: UseSoulsChatLiveOptions) {
   const [messages, setMessages] = useState(initialMessages)
+  const [releasing, setReleasing] = useState(false)
 
   useEffect(() => {
     setMessages(initialMessages)
@@ -71,9 +74,46 @@ export function useSoulsChatLive({
     }
   }, [conversationId, reloadMessages])
 
-  const isWorking = messages.some(
-    (message) => message.role === "assistant" && message.status === "working"
+  const workingMessage = useMemo(
+    () => messages.find((message) => message.role === "assistant" && message.status === "working"),
+    [messages]
   )
 
-  return { messages, reloadMessages, isWorking }
+  const isStaleWorking = workingMessage ? isSoulsMessageStale(workingMessage) : false
+  const isWorking = Boolean(workingMessage) && !isStaleWorking
+
+  useEffect(() => {
+    if (!conversationId || !isStaleWorking || releasing) {
+      return
+    }
+
+    setReleasing(true)
+    void cancelSoulsPrivateWork(conversationId)
+      .then(() => reloadMessages())
+      .finally(() => setReleasing(false))
+  }, [conversationId, isStaleWorking, releasing, reloadMessages])
+
+  const releaseSouls = useCallback(async () => {
+    if (!conversationId) {
+      return
+    }
+
+    setReleasing(true)
+    try {
+      await cancelSoulsPrivateWork(conversationId)
+      await reloadMessages()
+    } finally {
+      setReleasing(false)
+    }
+  }, [conversationId, reloadMessages])
+
+  return {
+    messages,
+    reloadMessages,
+    isWorking,
+    isStaleWorking,
+    releasing,
+    releaseSouls,
+    workingMessage,
+  }
 }

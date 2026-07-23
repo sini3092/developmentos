@@ -83,7 +83,14 @@ export function SoulsSidePanel() {
 
   const [state, action, pending] = useActionState(sendSoulsPrivateMessage, {})
 
-  const { messages: liveMessages, reloadMessages, isWorking } = useSoulsChatLive({
+  const {
+    messages: liveMessages,
+    reloadMessages,
+    isWorking,
+    isStaleWorking,
+    releasing,
+    releaseSouls,
+  } = useSoulsChatLive({
     conversationId: conversation?.id ?? null,
     initialMessages,
   })
@@ -251,12 +258,26 @@ export function SoulsSidePanel() {
             </p>
           ) : (
             <form className="space-y-2" onSubmit={handleSubmit}>
+              {isStaleWorking ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs">
+                  <span className="text-warning">Souls seems stuck. Release the chat to continue.</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={releasing}
+                    onClick={() => void releaseSouls()}
+                  >
+                    {releasing ? "Releasing…" : "Release chat"}
+                  </Button>
+                </div>
+              ) : null}
               <Textarea
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
                 placeholder={placeholder}
                 rows={3}
-                disabled={pending || isWorking}
+                disabled={pending || isWorking || releasing}
                 className="max-h-36 min-h-16 resize-none overflow-y-auto [field-sizing:fixed]"
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
@@ -266,8 +287,23 @@ export function SoulsSidePanel() {
                 }}
               />
               {state.error ? <p className="text-xs text-danger">{state.error}</p> : null}
-              <div className="flex justify-end">
-                <Button type="submit" size="sm" disabled={pending || isWorking || !body.trim()}>
+              <div className="flex justify-end gap-2">
+                {isWorking ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={releasing}
+                    onClick={() => void releaseSouls()}
+                  >
+                    Stop
+                  </Button>
+                ) : null}
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={pending || isWorking || releasing || !body.trim()}
+                >
                   <Send className="size-4" />
                   {isWorking || pending ? "Souls is working…" : "Send"}
                 </Button>
