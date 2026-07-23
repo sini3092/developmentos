@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import type { LoreEntryWithAuthor } from "@/lib/database.types"
 import { LoreCanonBadge, LoreTypeBadge } from "@/components/lore/lore-badges"
+import { LoreEntryCover } from "@/components/lore/lore-entry-cover"
 import { formatDate } from "@/lib/utils/format"
 import { cn } from "@/lib/utils"
 
@@ -18,6 +19,7 @@ export function LoreEntryCard({ entry, slug, layout = "grid" }: LoreEntryCardPro
         href={`/projects/${slug}/lore/${entry.slug}`}
         className="flex items-center gap-4 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-xs transition-colors hover:border-border hover:bg-surface-raised/50"
       >
+        <LoreEntryCover name={entry.name} entryType={entry.entry_type} compact />
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">{entry.name}</p>
           {entry.summary ? (
@@ -43,8 +45,8 @@ export function LoreEntryCard({ entry, slug, layout = "grid" }: LoreEntryCardPro
         "hover:border-border hover:bg-surface-raised/50"
       )}
     >
-      <div className="mb-3 flex aspect-[16/9] items-center justify-center rounded-lg bg-muted/50 text-3xl font-serif text-muted-foreground/40">
-        {entry.name.slice(0, 1).toUpperCase()}
+      <div className="mb-3">
+        <LoreEntryCover name={entry.name} entryType={entry.entry_type} />
       </div>
       <div className="flex flex-wrap gap-2">
         <LoreTypeBadge type={entry.entry_type} />
