@@ -51,6 +51,7 @@ export type NotificationType =
   | "lore_review_requested"
   | "lore_comment"
   | "lore_review_resolved"
+  | "souls_game_status"
 export type AutomationTriggerType = "task_created" | "task_status_changed" | "task_assigned"
 export type AutomationActionType = "notify_assignee" | "set_task_status" | "add_label"
 export type DocumentStatus =

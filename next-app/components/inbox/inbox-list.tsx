@@ -30,6 +30,7 @@ const typeLabels: Record<Notification["type"], string> = {
   lore_review_requested: "Lore review",
   lore_comment: "Lore comment",
   lore_review_resolved: "Lore review",
+  souls_game_status: "Souls",
 }
 
 export function InboxList({ notifications, workspaceId }: InboxListProps) {

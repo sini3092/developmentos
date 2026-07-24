@@ -1,15 +1,16 @@
 import { z } from "zod"
 
-import { getGithubFileContent, putGithubFileContent } from "@/lib/github/content"
+import { getGithubFileContent } from "@/lib/github/content"
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
 import { normalizeTaskTitle } from "@/lib/imports/task-dedup"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
+import { notifyProjectMembersSoulsGameStatus } from "@/lib/souls/game-status-notifications"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
 
 const syncPlanSchema = z.object({
-  should_update_file: z.boolean(),
-  summary: z.string(),
-  updated_markdown: z.string().optional(),
+  outcome: z.enum(["changes_applied", "no_changes_needed"]),
+  inbox_title: z.string().min(1),
+  inbox_body: z.string().min(1),
   task_updates: z
     .array(
       z.object({
@@ -19,6 +20,7 @@ const syncPlanSchema = z.object({
       })
     )
     .optional(),
+  recommended_game_status_notes: z.array(z.string()).optional(),
 })
 
 function parseJsonResponse(text: string) {
@@ -28,7 +30,10 @@ function parseJsonResponse(text: string) {
   return JSON.parse(raw) as unknown
 }
 
-function gameStatusTouched(commits: Array<{ added?: string[]; modified?: string[]; removed?: string[] }>, path: string) {
+function gameStatusTouched(
+  commits: Array<{ added?: string[]; modified?: string[]; removed?: string[] }>,
+  path: string
+) {
   const normalized = path.replace(/\\/g, "/")
   return commits.some(
     (commit) =>
@@ -38,11 +43,44 @@ function gameStatusTouched(commits: Array<{ added?: string[]; modified?: string[
   )
 }
 
+function buildInboxBody(
+  plan: z.infer<typeof syncPlanSchema>,
+  appliedUpdates: Array<{ identifier: string; title: string; status: string; note?: string }>
+) {
+  const lines = [plan.inbox_body.trim()]
+
+  if (appliedUpdates.length > 0) {
+    lines.push("", "DevelopmentOS updates applied:")
+    for (const update of appliedUpdates) {
+      lines.push(
+        `- ${update.identifier} · ${update.title} → ${update.status.replace(/_/g, " ")}${
+          update.note ? ` (${update.note})` : ""
+        }`
+      )
+    }
+  }
+
+  if (plan.recommended_game_status_notes?.length) {
+    lines.push("", "Suggested GAME_STATUS.md notes (manual — Souls does not edit the file):")
+    for (const note of plan.recommended_game_status_notes) {
+      lines.push(`- ${note}`)
+    }
+  }
+
+  return lines.join("\n")
+}
+
 export async function runSoulsGameStatusSync(input: {
   projectId: string
   branch: string
   commitSha: string
-  commits: Array<{ id: string; message: string; added?: string[]; modified?: string[]; removed?: string[] }>
+  commits: Array<{
+    id: string
+    message: string
+    added?: string[]
+    modified?: string[]
+    removed?: string[]
+  }>
 }) {
   if (!isAdminClientConfigured()) {
     return { skipped: true, reason: "Admin client not configured." }
@@ -99,8 +137,8 @@ export async function runSoulsGameStatusSync(input: {
     identifier: task.identifier,
     title: task.title,
     status: task.status,
-    board: task.list_id ? listById.get(task.list_id)?.board_key ?? null : null,
-    list: task.list_id ? listById.get(task.list_id)?.name ?? null : null,
+    board: task.list_id ? (listById.get(task.list_id)?.board_key ?? null) : null,
+    list: task.list_id ? (listById.get(task.list_id)?.name ?? null) : null,
     updated_at: task.updated_at,
   }))
 
@@ -119,24 +157,30 @@ export async function runSoulsGameStatusSync(input: {
     apiKey: workspace.openrouter_api_key,
     model: workspace.openrouter_model ?? "google/gemini-2.0-flash-001",
     temperature: 0.2,
-    maxTokens: 6000,
+    maxTokens: 4000,
     messages: [
       {
         role: "system",
-        content: `You are Souls, syncing a living game status markdown file with DevelopmentOS task data.
-Rules:
-- Never duplicate sections or checklist items that already exist with the same meaning.
-- Prefer updating checkbox states [x], [~], [ ] instead of rewriting whole sections.
-- Preserve Norwegian language and document structure when the file is Norwegian.
-- Add changelog entries only for meaningful new progress.
-- Match tasks by normalized title when updating DevelopmentOS-side status suggestions.
-- Do not remove historical changelog entries.
+        content: `You are Souls, the private game development assistant for DevelopmentOS.
+
+Review the pushed GAME_STATUS.md file against DevelopmentOS task data after a Git commit.
+
+Important rules:
+- Write ALL inbox copy in English.
+- NEVER modify GAME_STATUS.md yourself. The team owns that file in the game repo.
+- You may recommend manual GAME_STATUS edits in recommended_game_status_notes.
+- You may suggest DevelopmentOS task status updates when GAME_STATUS checkboxes clearly imply progress.
+- Do not duplicate work — only update tasks when the file clearly indicates a status change.
+- If nothing in DevelopmentOS needs updating, set outcome to "no_changes_needed" and explain what you checked.
+- Always send a helpful inbox message, even when no task updates are needed.
+
 Respond with JSON only:
 {
-  "should_update_file": boolean,
-  "summary": "short summary",
-  "updated_markdown": "full updated markdown if should_update_file",
-  "task_updates": [{ "title": "...", "status": "done|in_progress|backlog", "note": "..." }]
+  "outcome": "changes_applied" | "no_changes_needed",
+  "inbox_title": "Short inbox title in English",
+  "inbox_body": "2-5 sentences in English explaining what you reviewed and what you did or found",
+  "task_updates": [{ "title": "...", "status": "done|in_progress|backlog|ready|blocked", "note": "..." }],
+  "recommended_game_status_notes": ["optional manual suggestions for the team"]
 }`,
       },
       {
@@ -144,7 +188,7 @@ Respond with JSON only:
         content: JSON.stringify({
           project: project.name,
           branch: input.branch,
-          commit: latestCommit?.message ?? input.commitSha,
+          commit_message: latestCommit?.message ?? input.commitSha,
           game_status_path: statusPath,
           game_status_markdown: file.content,
           developmentos_tasks: taskSummary,
@@ -155,11 +199,17 @@ Respond with JSON only:
 
   const plan = syncPlanSchema.parse(parseJsonResponse(response))
 
-  let tasksUpdated = 0
+  const appliedUpdates: Array<{
+    identifier: string
+    title: string
+    status: string
+    note?: string
+  }> = []
+
   for (const update of plan.task_updates ?? []) {
     const normalized = normalizeTaskTitle(update.title)
     const task = (tasks ?? []).find((item) => normalizeTaskTitle(item.title) === normalized)
-    if (!task || !update.status) {
+    if (!task || !update.status || task.status === update.status) {
       continue
     }
 
@@ -172,27 +222,31 @@ Respond with JSON only:
       .eq("id", task.id)
 
     if (!error) {
-      tasksUpdated += 1
+      appliedUpdates.push({
+        identifier: task.identifier,
+        title: task.title,
+        status: update.status,
+        note: update.note,
+      })
     }
   }
 
-  let fileUpdated = false
-  let commitUrl: string | null = null
+  const inboxTitle =
+    appliedUpdates.length > 0
+      ? plan.inbox_title
+      : plan.inbox_title.includes("reviewed")
+        ? plan.inbox_title
+        : `Souls reviewed ${statusPath}`
 
-  if (plan.should_update_file && plan.updated_markdown && plan.updated_markdown !== file.content) {
-    const put = await putGithubFileContent(
-      token,
-      project.github_owner,
-      project.github_repo_name,
-      statusPath,
-      input.branch,
-      `chore: Souls sync ${statusPath}`,
-      plan.updated_markdown,
-      file.sha
-    )
-    fileUpdated = true
-    commitUrl = put.commitUrl
-  }
+  const inboxBody = buildInboxBody(plan, appliedUpdates)
+
+  const notifiedCount = await notifyProjectMembersSoulsGameStatus(supabase, {
+    workspaceId: project.workspace_id,
+    projectId: project.id,
+    projectSlug: project.slug,
+    title: inboxTitle,
+    body: inboxBody,
+  })
 
   await supabase.rpc("log_github_activity_event", {
     p_workspace_id: project.workspace_id,
@@ -203,20 +257,20 @@ Respond with JSON only:
     p_new_value: {
       branch: input.branch,
       commit_sha: input.commitSha,
-      summary: plan.summary,
-      file_updated: fileUpdated,
-      tasks_updated: tasksUpdated,
-      commit_url: commitUrl,
+      outcome: plan.outcome,
+      tasks_updated: appliedUpdates.length,
+      notifications_sent: notifiedCount,
+      inbox_title: inboxTitle,
     },
-    p_message: `Souls synced ${statusPath}: ${plan.summary}`,
+    p_message: `Souls reviewed ${statusPath}: ${plan.outcome.replace(/_/g, " ")}`,
   })
 
   return {
     skipped: false,
-    summary: plan.summary,
-    fileUpdated,
-    tasksUpdated,
-    commitUrl,
+    outcome: plan.outcome,
+    summary: plan.inbox_body,
+    tasksUpdated: appliedUpdates.length,
+    notificationsSent: notifiedCount,
   }
 }
 
