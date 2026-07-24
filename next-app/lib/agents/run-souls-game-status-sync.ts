@@ -1,7 +1,12 @@
 import { z } from "zod"
 
 import { applyGameStatusMarkdownUpdates } from "@/lib/imports/apply-game-status-updates"
-import { getGithubFileContent } from "@/lib/github/content"
+import { getGithubCommitChangedFiles, getGithubFileContent } from "@/lib/github/content"
+import {
+  gameStatusTouched,
+  pathsTouchGameStatus,
+  type GameStatusCommitFiles,
+} from "@/lib/github/game-status-touched"
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import { notifyProjectMembersSoulsGameStatus } from "@/lib/souls/game-status-notifications"
@@ -24,24 +29,22 @@ const syncPlanSchema = z.object({
   recommended_game_status_notes: z.array(z.string()).optional(),
 })
 
+type SyncProject = {
+  id: string
+  workspace_id: string
+  slug: string
+  name: string
+  github_owner: string | null
+  github_repo_name: string | null
+  game_status_path: string | null
+  game_status_sync_enabled: boolean | null
+}
+
 function parseJsonResponse(text: string) {
   const trimmed = text.trim()
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const raw = fenced ? fenced[1].trim() : trimmed
   return JSON.parse(raw) as unknown
-}
-
-function gameStatusTouched(
-  commits: Array<{ added?: string[]; modified?: string[]; removed?: string[] }>,
-  path: string
-) {
-  const normalized = path.replace(/\\/g, "/")
-  return commits.some(
-    (commit) =>
-      commit.added?.includes(normalized) ||
-      commit.modified?.includes(normalized) ||
-      commit.removed?.includes(normalized)
-  )
 }
 
 function buildInboxBody(
@@ -79,6 +82,104 @@ function buildInboxBody(
   return lines.join("\n")
 }
 
+async function logSoulsGameStatusSyncEvent(
+  supabase: ReturnType<typeof createAdminClient>,
+  project: Pick<SyncProject, "id" | "workspace_id">,
+  input: {
+    branch: string
+    commitSha: string
+    statusPath: string
+    outcome: string
+    message: string
+    details?: Record<string, unknown>
+  }
+) {
+  await supabase.rpc("log_github_activity_event", {
+    p_workspace_id: project.workspace_id,
+    p_project_id: project.id,
+    p_event_type: "souls.game_status_sync",
+    p_entity_type: "project",
+    p_entity_id: project.id,
+    p_new_value: {
+      branch: input.branch,
+      commit_sha: input.commitSha,
+      status_path: input.statusPath,
+      outcome: input.outcome,
+      ...input.details,
+    },
+    p_message: input.message,
+  })
+}
+
+async function notifySoulsGameStatusIssue(
+  supabase: ReturnType<typeof createAdminClient>,
+  project: Pick<SyncProject, "id" | "workspace_id" | "slug">,
+  input: { title: string; body: string }
+) {
+  return notifyProjectMembersSoulsGameStatus(supabase, {
+    workspaceId: project.workspace_id,
+    projectId: project.id,
+    projectSlug: project.slug,
+    title: input.title,
+    body: input.body,
+  })
+}
+
+async function resolveGameStatusTouched(input: {
+  commits: GameStatusCommitFiles[]
+  headCommit?: GameStatusCommitFiles | null
+  statusPath: string
+  commitSha: string
+  githubOwner: string
+  githubRepoName: string
+  projectId: string
+}) {
+  if (gameStatusTouched(input.commits, input.statusPath, input.headCommit)) {
+    return true
+  }
+
+  const token = await getGithubTokenForProjectAdmin(input.projectId)
+  if (!token) {
+    return false
+  }
+
+  try {
+    const files = await getGithubCommitChangedFiles(
+      token,
+      input.githubOwner,
+      input.githubRepoName,
+      input.commitSha
+    )
+    return pathsTouchGameStatus(files, input.statusPath)
+  } catch {
+    return false
+  }
+}
+
+export async function shouldRunGameStatusSyncForPush(input: {
+  projectId: string
+  githubOwner: string | null
+  githubRepoName: string | null
+  gameStatusPath: string
+  commitSha: string | null
+  commits: GameStatusCommitFiles[]
+  headCommit?: GameStatusCommitFiles | null
+}) {
+  if (!input.commitSha || !input.githubOwner || !input.githubRepoName) {
+    return false
+  }
+
+  return resolveGameStatusTouched({
+    commits: input.commits,
+    headCommit: input.headCommit,
+    statusPath: input.gameStatusPath,
+    commitSha: input.commitSha,
+    githubOwner: input.githubOwner,
+    githubRepoName: input.githubRepoName,
+    projectId: input.projectId,
+  })
+}
+
 export async function runSoulsGameStatusSync(input: {
   projectId: string
   branch: string
@@ -90,6 +191,7 @@ export async function runSoulsGameStatusSync(input: {
     modified?: string[]
     removed?: string[]
   }>
+  headCommit?: GameStatusCommitFiles | null
 }) {
   if (!isAdminClientConfigured()) {
     return { skipped: true, reason: "Admin client not configured." }
@@ -110,13 +212,37 @@ export async function runSoulsGameStatusSync(input: {
   }
 
   const statusPath = project.game_status_path || "docs/GAME_STATUS.md"
-  if (!gameStatusTouched(input.commits, statusPath)) {
+  const touched = await resolveGameStatusTouched({
+    commits: input.commits,
+    headCommit: input.headCommit,
+    statusPath,
+    commitSha: input.commitSha,
+    githubOwner: project.github_owner,
+    githubRepoName: project.github_repo_name,
+    projectId: project.id,
+  })
+
+  if (!touched) {
     return { skipped: true, reason: "GAME_STATUS.md not changed in this push." }
   }
 
   const token = await getGithubTokenForProjectAdmin(project.id)
   if (!token) {
-    return { skipped: true, reason: "No GitHub token available for project members." }
+    const reason =
+      "Souls could not review GAME_STATUS.md because no GitHub token is available for this project."
+    await notifySoulsGameStatusIssue(supabase, project, {
+      title: "Souls GAME_STATUS review skipped",
+      body: reason,
+    })
+    await logSoulsGameStatusSyncEvent(supabase, project, {
+      branch: input.branch,
+      commitSha: input.commitSha,
+      statusPath,
+      outcome: "skipped",
+      message: reason,
+      details: { reason: "missing_github_token" },
+    })
+    return { skipped: true, reason }
   }
 
   const file = await getGithubFileContent(
@@ -158,10 +284,24 @@ export async function runSoulsGameStatusSync(input: {
     .maybeSingle()
 
   if (!workspace?.openrouter_api_key) {
-    return { skipped: true, reason: "OpenRouter is not configured for this workspace." }
+    const reason =
+      "Souls could not review GAME_STATUS.md because OpenRouter is not configured for this workspace."
+    await notifySoulsGameStatusIssue(supabase, project, {
+      title: "Souls GAME_STATUS review skipped",
+      body: reason,
+    })
+    await logSoulsGameStatusSyncEvent(supabase, project, {
+      branch: input.branch,
+      commitSha: input.commitSha,
+      statusPath,
+      outcome: "skipped",
+      message: reason,
+      details: { reason: "missing_openrouter" },
+    })
+    return { skipped: true, reason }
   }
 
-  const latestCommit = input.commits.at(-1)
+  const latestCommit = input.commits.at(-1) ?? input.headCommit
   const response = await chatWithOpenRouter({
     apiKey: workspace.openrouter_api_key,
     model: workspace.openrouter_model ?? "google/gemini-2.0-flash-001",
@@ -238,16 +378,13 @@ Respond with JSON only:
     body: inboxBody,
   })
 
-  await supabase.rpc("log_github_activity_event", {
-    p_workspace_id: project.workspace_id,
-    p_project_id: project.id,
-    p_event_type: "souls.game_status_sync",
-    p_entity_type: "project",
-    p_entity_id: project.id,
-    p_new_value: {
-      branch: input.branch,
-      commit_sha: input.commitSha,
-      outcome: plan.outcome,
+  await logSoulsGameStatusSyncEvent(supabase, project, {
+    branch: input.branch,
+    commitSha: input.commitSha,
+    statusPath,
+    outcome: plan.outcome,
+    message: `Souls reviewed ${statusPath}: ${plan.outcome.replace(/_/g, " ")}`,
+    details: {
       tasks_updated: applied.tasksUpdated,
       tasks_created: applied.tasksCreated,
       checklist_updates: applied.checklistsUpdated,
@@ -257,7 +394,6 @@ Respond with JSON only:
       notifications_sent: notifiedCount,
       inbox_title: inboxTitle,
     },
-    p_message: `Souls reviewed ${statusPath}: ${plan.outcome.replace(/_/g, " ")}`,
   })
 
   return {
@@ -274,9 +410,43 @@ Respond with JSON only:
   }
 }
 
-export function shouldRunGameStatusSync(
-  commits: Array<{ added?: string[]; modified?: string[]; removed?: string[] }>,
+export async function reportSoulsGameStatusSyncFailure(input: {
+  projectId: string
+  branch: string
+  commitSha: string
   statusPath: string
-) {
-  return gameStatusTouched(commits, statusPath)
+  error: unknown
+}) {
+  if (!isAdminClientConfigured()) {
+    return
+  }
+
+  const supabase = createAdminClient()
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id, workspace_id, slug")
+    .eq("id", input.projectId)
+    .maybeSingle()
+
+  if (!project) {
+    return
+  }
+
+  const message =
+    input.error instanceof Error ? input.error.message : "Unknown error during Souls GAME_STATUS sync."
+  const body = `Souls could not finish reviewing ${input.statusPath} after the latest push to ${input.branch}. ${message}`
+
+  await notifySoulsGameStatusIssue(supabase, project, {
+    title: "Souls GAME_STATUS review failed",
+    body,
+  })
+
+  await logSoulsGameStatusSyncEvent(supabase, project, {
+    branch: input.branch,
+    commitSha: input.commitSha,
+    statusPath: input.statusPath,
+    outcome: "failed",
+    message: body,
+    details: { error: message },
+  })
 }

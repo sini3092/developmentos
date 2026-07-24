@@ -9,8 +9,9 @@ import {
   type GithubPushPayload,
 } from "@/lib/github/webhooks"
 import {
+  reportSoulsGameStatusSyncFailure,
   runSoulsGameStatusSync,
-  shouldRunGameStatusSync,
+  shouldRunGameStatusSyncForPush,
 } from "@/lib/agents/run-souls-game-status-sync"
 
 type AdminClient = SupabaseClient<Database>
@@ -18,6 +19,8 @@ type AdminClient = SupabaseClient<Database>
 type ProjectRow = {
   id: string
   workspace_id: string
+  github_owner: string | null
+  github_repo_name: string | null
   github_webhook_secret: string | null
   game_status_path?: string | null
   game_status_sync_enabled?: boolean | null
@@ -30,7 +33,9 @@ export async function findProjectForGithubRepo(
 ): Promise<ProjectRow | null> {
   const { data } = await supabase
     .from("projects")
-    .select("id, workspace_id, github_webhook_secret, game_status_path, game_status_sync_enabled")
+    .select(
+      "id, workspace_id, github_owner, github_repo_name, github_webhook_secret, game_status_path, game_status_sync_enabled"
+    )
     .eq("github_owner", owner)
     .eq("github_repo_name", name)
     .eq("status", "active")
@@ -163,19 +168,36 @@ export async function processGithubPushEvent(
   }
 
   const statusPath = project.game_status_path ?? "docs/GAME_STATUS.md"
+  const commitSha = payload.after ?? payload.head_commit?.id ?? latestCommit?.id
   if (
     project.game_status_sync_enabled !== false &&
-    shouldRunGameStatusSync(payload.commits, statusPath)
+    commitSha &&
+    (await shouldRunGameStatusSyncForPush({
+      projectId: project.id,
+      githubOwner: project.github_owner,
+      githubRepoName: project.github_repo_name,
+      gameStatusPath: statusPath,
+      commitSha,
+      commits: payload.commits,
+      headCommit: payload.head_commit,
+    }))
   ) {
-    const commitSha = payload.after ?? latestCommit?.id
-    if (commitSha) {
-      void runSoulsGameStatusSync({
+    try {
+      await runSoulsGameStatusSync({
         projectId: project.id,
         branch: branchName,
         commitSha,
         commits: payload.commits,
-      }).catch((error) => {
-        console.error("Souls GAME_STATUS sync failed:", error)
+        headCommit: payload.head_commit,
+      })
+    } catch (error) {
+      console.error("Souls GAME_STATUS sync failed:", error)
+      await reportSoulsGameStatusSyncFailure({
+        projectId: project.id,
+        branch: branchName,
+        commitSha,
+        statusPath,
+        error,
       })
     }
   }

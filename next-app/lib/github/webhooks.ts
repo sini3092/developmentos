@@ -24,6 +24,13 @@ export type GithubPushPayload = {
     modified?: string[]
     removed?: string[]
   }>
+  head_commit?: {
+    id: string
+    message: string
+    added?: string[]
+    modified?: string[]
+    removed?: string[]
+  } | null
 }
 
 export type GithubPullRequestPayload = {

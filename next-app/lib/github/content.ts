@@ -149,6 +149,30 @@ export async function createGithubBranch(
   }
 }
 
+export async function getGithubCommitChangedFiles(
+  token: string,
+  owner: string,
+  repo: string,
+  commitSha: string
+) {
+  const response = await fetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
+    { headers: githubHeaders(token), next: { revalidate: 0 } }
+  )
+
+  if (!response.ok) {
+    throw new Error(`Could not read commit ${commitSha} (${response.status}).`)
+  }
+
+  const data = (await response.json()) as {
+    files?: Array<{ filename?: string }>
+  }
+
+  return (data.files ?? [])
+    .map((file) => file.filename)
+    .filter((filename): filename is string => Boolean(filename))
+}
+
 export async function getGithubBranchHeadSha(
   token: string,
   owner: string,
