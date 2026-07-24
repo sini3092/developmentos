@@ -85,7 +85,7 @@ export function KanbanBoard({
   )
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null)
   const [createListId, setCreateListId] = useState<string | null>(null)
-  const [activeBoardKey, setActiveBoardKey] = useState<BoardKey | "all">("dev")
+  const [activeBoardKey, setActiveBoardKey] = useState<BoardKey | "all">("all")
   const [focusListId, setFocusListId] = useState<string | null>(null)
 
   const sensors = useSensors(
