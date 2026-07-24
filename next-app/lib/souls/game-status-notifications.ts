@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { revalidatePath } from "next/cache"
 
 import type { Database } from "@/lib/database.types"
 import { processPushQueue } from "@/lib/push/send"
@@ -51,6 +52,9 @@ export async function notifyProjectMembersSoulsGameStatus(
   if (error) {
     throw new Error(error.message)
   }
+
+  revalidatePath("/inbox")
+  revalidatePath("/", "layout")
 
   await processPushQueue()
 

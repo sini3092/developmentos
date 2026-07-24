@@ -40,8 +40,9 @@ export function InboxList({ notifications, workspaceId }: InboxListProps) {
 
   if (notifications.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed border-border/80 bg-surface-raised/50 px-4 py-10 text-center text-sm text-muted-foreground">
-        You&apos;re all caught up. Assignments, mentions, and roadmap updates will land here.
+        <p className="rounded-xl border border-dashed border-border/80 bg-surface-raised/50 px-4 py-10 text-center text-sm text-muted-foreground">
+        You&apos;re all caught up. Assignments, mentions, Souls GAME_STATUS reviews, and roadmap
+        updates will land here.
       </p>
     )
   }

@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { Sparkles, Webhook } from "lucide-react"
 
 import { generateProjectGithubWebhookSecret } from "@/lib/actions/github"
@@ -22,6 +23,7 @@ export function GithubWebhookPanel({
   siteUrl,
   adminConfigured,
 }: GithubWebhookPanelProps) {
+  const router = useRouter()
   const [state, formAction, pending] = useActionState(generateProjectGithubWebhookSecret, {})
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -136,6 +138,7 @@ export function GithubWebhookPanel({
                     setSyncMessage(
                       `Souls reviewed GAME_STATUS (${data.outcome ?? "done"}). Inbox notifications sent: ${data.notificationsSent ?? 0}.`
                     )
+                    router.refresh()
                   })
                 }}
               >

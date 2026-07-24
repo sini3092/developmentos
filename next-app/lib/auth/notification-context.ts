@@ -19,13 +19,18 @@ export async function getUnreadNotificationCount(workspaceId: string, userId: st
 
 export async function getNotifications(workspaceId: string, userId: string) {
   const supabase = await createClient()
-  const { data: notifications } = await supabase
+  const { data: notifications, error } = await supabase
     .from("notifications")
     .select("*")
     .eq("workspace_id", workspaceId)
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(50)
+
+  if (error) {
+    console.error("Failed to load notifications:", error.message)
+    return []
+  }
 
   return notifications ?? []
 }

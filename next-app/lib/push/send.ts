@@ -31,8 +31,15 @@ function isTypeEnabled(
       return prefs.push_mentioned
     case "calendar_reminder":
       return prefs.push_calendar_reminder
+    case "souls_game_status":
+    case "lore_review_requested":
+    case "lore_comment":
+    case "lore_review_resolved":
+      return prefs.push_enabled
+    case "automation":
+      return prefs.push_enabled
     default:
-      return false
+      return prefs.push_enabled
   }
 }
 

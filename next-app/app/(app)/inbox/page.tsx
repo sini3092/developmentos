@@ -5,6 +5,8 @@ import { InboxList } from "@/components/inbox/inbox-list"
 import { getNotifications } from "@/lib/auth/notification-context"
 import { requireWorkspaceContext } from "@/lib/auth/workspace-context"
 
+export const dynamic = "force-dynamic"
+
 export default async function InboxPage() {
   const { activeWorkspace, user } = await requireWorkspaceContext()
   const notifications = await getNotifications(activeWorkspace!.id, user.id)
