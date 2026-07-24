@@ -1,17 +1,20 @@
-import type { TaskPriority } from "@/lib/database.types"
 import type { BoardKey } from "@/lib/constants/board-keys"
+import type { TaskPriority, TaskStatus } from "@/lib/database.types"
+import { DONE_SYSTEM_CHECKLIST, PARTIAL_SYSTEM_CHECKLIST } from "@/lib/imports/list-workflow"
+
+export type PlanChecklistItem = string | { title: string; completed?: boolean }
 
 export type PlanTaskCard = {
   title: string
   boardKey: BoardKey
   listName: string
   priority?: TaskPriority
-  status?: "backlog" | "in_progress" | "in_review" | "done" | "cancelled"
+  status?: TaskStatus
   milestone?: string
   system?: string
   description?: string
   acceptanceCriteria?: string
-  checklist?: string[]
+  checklist?: PlanChecklistItem[]
   featureState?: "Playable" | "Partial" | "Data Only" | "Design Only" | "Needs Polish" | "Needs Test" | "Blocked"
 }
 
@@ -441,6 +444,7 @@ export const EVERWOOD_SPRINT_CARDS: PlanTaskCard[] = [
     boardKey: "dev",
     listName: "Ready",
     priority: "high",
+    status: "ready",
     milestone: "Prototype Stabilization",
     system: "Inventory & Crafting",
     acceptanceCriteria:
@@ -466,6 +470,7 @@ export const EVERWOOD_SPRINT_CARDS: PlanTaskCard[] = [
     boardKey: "dev",
     listName: "Ready",
     priority: "high",
+    status: "ready",
     milestone: "Prototype Stabilization",
     system: "Gathering & Resources",
     acceptanceCriteria:
@@ -491,6 +496,7 @@ export const EVERWOOD_SPRINT_CARDS: PlanTaskCard[] = [
     boardKey: "dev",
     listName: "Ready",
     priority: "high",
+    status: "ready",
     milestone: "Prototype Stabilization",
     system: "Inventory & Crafting",
     acceptanceCriteria: "Stone Pickaxe works as a complete alternative to the starter Miner's Pickaxe.",
@@ -514,6 +520,7 @@ export const EVERWOOD_SPRINT_CARDS: PlanTaskCard[] = [
     boardKey: "dev",
     listName: "Ready",
     priority: "high",
+    status: "ready",
     milestone: "Settlement Foundation",
     system: "Building & Settlement",
     acceptanceCriteria:
@@ -542,6 +549,7 @@ export const EVERWOOD_SPRINT_CARDS: PlanTaskCard[] = [
     boardKey: "dev",
     listName: "Ready",
     priority: "high",
+    status: "ready",
     milestone: "Settlement Foundation",
     system: "Building & Settlement",
     acceptanceCriteria:
@@ -570,6 +578,7 @@ export const EVERWOOD_SPRINT_CARDS: PlanTaskCard[] = [
     boardKey: "dev",
     listName: "Ready",
     priority: "high",
+    status: "ready",
     milestone: "Prototype Stabilization",
     system: "Audio",
     acceptanceCriteria:
@@ -818,6 +827,7 @@ export function buildEverwoodPlanCards(): PlanTaskCard[] {
         priority: "low",
         featureState: "Playable",
         system: listName,
+        checklist: [...DONE_SYSTEM_CHECKLIST],
       })
     }
     for (const title of groups.partial) {
@@ -829,6 +839,7 @@ export function buildEverwoodPlanCards(): PlanTaskCard[] {
         priority: "medium",
         featureState: "Partial",
         system: listName,
+        checklist: [...PARTIAL_SYSTEM_CHECKLIST],
       })
     }
   }
@@ -842,6 +853,7 @@ export function buildEverwoodPlanCards(): PlanTaskCard[] {
       priority: "low",
       featureState: "Playable",
       description: "Imported from playable systems snapshot.",
+      checklist: [...DONE_SYSTEM_CHECKLIST],
     })
   }
 

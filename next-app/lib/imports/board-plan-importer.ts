@@ -9,10 +9,18 @@ import {
   EVERWOOD_LORE_ENTRIES,
   EVERWOOD_MILESTONES,
   type PlanTaskCard,
+  type PlanChecklistItem,
 } from "@/lib/imports/everwood-plan-data"
 import { findTaskByTitle, loadProjectTaskTitleIndex, normalizeTaskTitle } from "@/lib/imports/task-dedup"
 import type { Database, TaskPriority } from "@/lib/database.types"
 import { slugify } from "@/lib/utils/format"
+import {
+  DONE_SYSTEM_CHECKLIST,
+  PARTIAL_SYSTEM_CHECKLIST,
+  resolveListColor,
+  resolveStatusFromList,
+} from "@/lib/imports/list-workflow"
+import { repairProjectBoardWorkflow } from "@/lib/imports/apply-game-status-updates"
 
 type Client = SupabaseClient<Database>
 
@@ -27,6 +35,9 @@ export type BoardPlanImportResult = {
   decisionsCreated: number
   designDocsCreated: number
   loreEntriesCreated: number
+  listsColored: number
+  statusesFixed: number
+  doneChecklistsFixed: number
   errors: string[]
 }
 
@@ -59,12 +70,16 @@ async function ensureBoardLists(
 
   const { data: existingLists } = await supabase
     .from("board_lists")
-    .select("id, name, board_key")
+    .select("id, name, board_key, color")
     .eq("project_id", projectId)
 
   for (const existing of existingLists ?? []) {
     if (existing.board_key) {
       result.set(listKey(existing.board_key as BoardKey, existing.name), existing.id)
+      const color = resolveListColor(existing.board_key as BoardKey, existing.name)
+      if (existing.color !== color) {
+        await supabase.from("board_lists").update({ color }).eq("id", existing.id)
+      }
     }
   }
 
@@ -97,6 +112,7 @@ async function ensureBoardLists(
       }
 
       position += 1000
+      const color = resolveListColor(boardKey, listName)
       const { data, error } = await supabase
         .from("board_lists")
         .insert({
@@ -104,7 +120,7 @@ async function ensureBoardLists(
           name: listName,
           board_key: boardKey,
           position,
-          color: "slate",
+          color,
         })
         .select("id")
         .single()
@@ -310,40 +326,62 @@ async function ensureLoreEntries(
 async function upsertChecklistItems(
   supabase: Client,
   taskId: string,
-  items: string[]
+  items: PlanChecklistItem[]
 ) {
   let added = 0
+  let updated = 0
   const { data: existing } = await supabase
     .from("task_checklist_items")
-    .select("title")
+    .select("id, title, completed")
     .eq("task_id", taskId)
 
-  const existingTitles = new Set(
-    (existing ?? []).map((item) => item.title.trim().toLowerCase())
+  const existingByTitle = new Map(
+    (existing ?? []).map((item) => [item.title.trim().toLowerCase(), item])
   )
 
   let position = existing?.length ?? 0
-  for (const title of items) {
-    const trimmed = title.trim()
-    if (!trimmed || existingTitles.has(trimmed.toLowerCase())) {
+  for (const entry of items) {
+    const title = typeof entry === "string" ? entry.trim() : entry.title.trim()
+    const completed = typeof entry === "string" ? false : (entry.completed ?? false)
+    if (!title) {
+      continue
+    }
+
+    const current = existingByTitle.get(title.toLowerCase())
+    if (current) {
+      if (current.completed !== completed) {
+        await supabase
+          .from("task_checklist_items")
+          .update({
+            completed,
+            completed_at: completed ? new Date().toISOString() : null,
+          })
+          .eq("id", current.id)
+        updated += 1
+      }
       continue
     }
 
     const { error } = await supabase.from("task_checklist_items").insert({
       task_id: taskId,
-      title: trimmed,
+      title,
       position,
-      completed: false,
+      completed,
+      completed_at: completed ? new Date().toISOString() : null,
     })
 
     if (!error) {
       added += 1
       position += 1
-      existingTitles.add(trimmed.toLowerCase())
+      existingByTitle.set(title.toLowerCase(), {
+        id: "",
+        title,
+        completed,
+      })
     }
   }
 
-  return added
+  return added + updated
 }
 
 async function upsertPlanTask(
@@ -372,6 +410,11 @@ async function upsertPlanTask(
   const milestoneId = input.card.milestone
     ? input.milestoneMap.get(input.card.milestone) ?? null
     : null
+  const resolvedStatus = resolveStatusFromList(
+    input.card.boardKey,
+    input.card.listName,
+    input.card.status
+  )
 
   if (existing || fallbackId) {
     const taskId = existing?.id ?? fallbackId!
@@ -381,7 +424,7 @@ async function upsertPlanTask(
 
     if (description) patch.description = description
     if (input.card.priority) patch.priority = input.card.priority
-    if (input.card.status) patch.status = input.card.status
+    patch.status = resolvedStatus
     if (milestoneId) patch.milestone_id = milestoneId
     if (listId) patch.list_id = listId
 
@@ -401,7 +444,7 @@ async function upsertPlanTask(
     p_project_id: input.projectId,
     p_title: input.card.title,
     p_description: description,
-    p_status: input.card.status ?? "backlog",
+    p_status: resolvedStatus,
     p_priority: input.card.priority ?? "medium",
     p_assignee_id: null,
     p_discipline: "worldbuilding",
@@ -442,6 +485,9 @@ export async function importEverwoodBoardPlan(input: {
     decisionsCreated: 0,
     designDocsCreated: 0,
     loreEntriesCreated: 0,
+    listsColored: 0,
+    statusesFixed: 0,
+    doneChecklistsFixed: 0,
     errors: [],
   }
 
@@ -503,6 +549,11 @@ export async function importEverwoodBoardPlan(input: {
       result.tasksSkipped += 1
     }
   }
+
+  const repair = await repairProjectBoardWorkflow(input.supabase, input.projectId)
+  result.listsColored = repair.listsUpdated
+  result.statusesFixed = repair.statusesFixed
+  result.doneChecklistsFixed = repair.checklistsFixed
 
   return result
 }

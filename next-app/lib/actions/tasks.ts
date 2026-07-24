@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import type { BoardKey } from "@/lib/constants/board-keys"
 import type { Discipline, TaskPriority, TaskStatus } from "@/lib/database.types"
 import {
   getTaskAutomationSnapshot,
@@ -9,6 +10,7 @@ import {
   runTaskAutomationsForStatusChange,
   runTaskAutomationsForUpdate,
 } from "@/lib/automations/task-events"
+import { resolveStatusFromList } from "@/lib/imports/list-workflow"
 import { createClient } from "@/lib/supabase/server"
 
 export type TaskActionState = {
@@ -128,13 +130,46 @@ export async function moveTaskOnBoard(
 ) {
   const previous = await getTaskAutomationSnapshot(taskId)
   const supabase = await createClient()
+
+  const { data: list } = await supabase
+    .from("board_lists")
+    .select("name, board_key")
+    .eq("id", listId)
+    .maybeSingle()
+
+  const nextStatus = list
+    ? resolveStatusFromList(list.board_key as BoardKey | null, list.name)
+    : undefined
+
   const { error } = await supabase
     .from("tasks")
-    .update({ list_id: listId, board_position: boardPosition })
+    .update({
+      list_id: listId,
+      board_position: boardPosition,
+      ...(nextStatus ? { status: nextStatus, updated_at: new Date().toISOString() } : {}),
+    })
     .eq("id", taskId)
 
   if (error) {
     return { error: error.message }
+  }
+
+  if (nextStatus === "done") {
+    const { data: checklistItems } = await supabase
+      .from("task_checklist_items")
+      .select("id")
+      .eq("task_id", taskId)
+      .eq("completed", false)
+
+    for (const item of checklistItems ?? []) {
+      await supabase
+        .from("task_checklist_items")
+        .update({
+          completed: true,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", item.id)
+    }
   }
 
   if (previous) {

@@ -55,6 +55,7 @@ export async function importEverwoodPlanForProject(
     `Decisions: ${result.decisionsCreated}`,
     `Design docs: ${result.designDocsCreated}`,
     `Lore entries: ${result.loreEntriesCreated}`,
+    `Repair: ${result.listsColored} list colors, ${result.statusesFixed} statuses, ${result.doneChecklistsFixed} done checklists`,
     result.errors.length ? `Errors: ${result.errors.length}` : null,
   ]
     .filter(Boolean)

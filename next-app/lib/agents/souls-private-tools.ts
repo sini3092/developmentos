@@ -325,6 +325,59 @@ export async function executeSoulsPrivateTool(input: {
         }
       }
 
+      case "tasks.checklist.complete": {
+        const taskId = String(input.toolInput.taskId ?? "")
+        const completeAll = Boolean(input.toolInput.all)
+        const items = Array.isArray(input.toolInput.items)
+          ? input.toolInput.items.map((item) => String(item).trim()).filter(Boolean)
+          : input.toolInput.title
+            ? [String(input.toolInput.title).trim()]
+            : []
+
+        if (!taskId) {
+          throw new Error("taskId is required.")
+        }
+
+        const { data: checklistItems } = await supabase
+          .from("task_checklist_items")
+          .select("id, title, completed")
+          .eq("task_id", taskId)
+
+        let updated = 0
+        for (const item of checklistItems ?? []) {
+          const shouldComplete = completeAll
+            ? true
+            : items.some((target) => target.toLowerCase() === item.title.trim().toLowerCase())
+
+          if (!shouldComplete || item.completed) {
+            continue
+          }
+
+          await supabase
+            .from("task_checklist_items")
+            .update({
+              completed: true,
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", item.id)
+          updated += 1
+        }
+
+        const { data: task } = await supabase
+          .from("tasks")
+          .select("identifier")
+          .eq("id", taskId)
+          .maybeSingle()
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          summary: `Completed ${updated} checklist item${updated === 1 ? "" : "s"} on ${task?.identifier ?? "task"}`,
+          after: { taskId, updated },
+        }
+      }
+
       case "plan.import.everwood": {
         const result = await importEverwoodBoardPlan({
           supabase,

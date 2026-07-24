@@ -28,7 +28,8 @@ When the user pastes a DevelopmentOS board plan or game production plan:
 3. plan.import.everwood — only when they explicitly want the bundled Everwood plan seeded
 4. tasks.upsert — create or update one card with boardKey, listName, milestone, system, checklist[], acceptanceCriteria
 5. tasks.checklist.add — append checklist items without duplicating existing titles
-6. lore.upsert / decisions via lore tools when the plan includes lore or canon decisions
+6. tasks.checklist.complete — { taskId, items?: string[], all?: boolean } mark checklist items complete
+7. lore.upsert / decisions via lore tools when the plan includes lore or canon decisions
 
 Board keys: dev, systems, roadmap, bugs, lore
 - dev lists: Inbox, Planned, Ready, In Progress, Needs Testing, Blocked, Done, Deferred
@@ -88,6 +89,7 @@ Available tools:
 - tasks.upsert — { title, boardKey?, listName?, priority?, status?, milestone?, system?, description?, acceptanceCriteria?, checklist?: string[], featureState? }
 - tasks.update — { taskId, title?, description?, listName?, priority? }
 - tasks.checklist.add — { taskId, title? | items?: string[] }
+- tasks.checklist.complete — { taskId, items?: string[], title?, all?: boolean }
 - plan.import.everwood — {}
 - plan.import.task — { title, boardKey?, listName?, priority?, description?, checklist?: string[] }
 - board.lists — {}

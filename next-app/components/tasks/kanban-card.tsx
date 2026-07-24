@@ -95,7 +95,7 @@ export function KanbanCard({
           {showRemaining ? (
             <div className="mt-2.5 space-y-1">
               <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                <span>Gjenstår</span>
+                <span>Remaining</span>
                 <span className="font-medium text-foreground">{remaining}%</span>
               </div>
               <div className="h-1 overflow-hidden rounded-full bg-muted">
@@ -161,7 +161,7 @@ export function KanbanCardOverlay({
       <div className="p-3">
         <p className="line-clamp-2 text-sm font-medium">{task.title}</p>
         {remaining < 100 ? (
-          <p className="mt-1 text-xs text-muted-foreground">{remaining}% gjenstår</p>
+          <p className="mt-1 text-xs text-muted-foreground">{remaining}% remaining</p>
         ) : null}
       </div>
     </div>

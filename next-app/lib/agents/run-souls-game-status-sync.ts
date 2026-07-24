@@ -1,8 +1,8 @@
 import { z } from "zod"
 
+import { applyGameStatusMarkdownUpdates } from "@/lib/imports/apply-game-status-updates"
 import { getGithubFileContent } from "@/lib/github/content"
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
-import { normalizeTaskTitle } from "@/lib/imports/task-dedup"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import { notifyProjectMembersSoulsGameStatus } from "@/lib/souls/game-status-notifications"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
@@ -45,18 +45,23 @@ function gameStatusTouched(
 
 function buildInboxBody(
   plan: z.infer<typeof syncPlanSchema>,
-  appliedUpdates: Array<{ identifier: string; title: string; status: string; note?: string }>
+  applied: Awaited<ReturnType<typeof applyGameStatusMarkdownUpdates>>
 ) {
   const lines = [plan.inbox_body.trim()]
 
-  if (appliedUpdates.length > 0) {
+  if (applied.applied.length > 0) {
     lines.push("", "DevelopmentOS updates applied:")
-    for (const update of appliedUpdates) {
-      lines.push(
-        `- ${update.identifier} · ${update.title} → ${update.status.replace(/_/g, " ")}${
-          update.note ? ` (${update.note})` : ""
-        }`
-      )
+    for (const update of applied.applied) {
+      const parts = [
+        `- ${update.identifier} · ${update.title}`,
+        update.status ? `status → ${update.status.replace(/_/g, " ")}` : null,
+        update.listName ? `moved to ${update.listName}` : null,
+        update.checklistChanges
+          ? `${update.checklistChanges} checklist item${update.checklistChanges === 1 ? "" : "s"} updated`
+          : null,
+        update.note ? `(${update.note})` : null,
+      ].filter(Boolean)
+      lines.push(parts.join(" · "))
     }
   }
 
@@ -170,6 +175,7 @@ Important rules:
 - NEVER modify GAME_STATUS.md yourself. The team owns that file in the game repo.
 - You may recommend manual GAME_STATUS edits in recommended_game_status_notes.
 - You may suggest DevelopmentOS task status updates when GAME_STATUS checkboxes clearly imply progress.
+- The server will automatically match [x], [~], and [ ] checkbox lines to tasks and checklist items, and move dev-board cards between lists when appropriate.
 - Do not duplicate work — only update tasks when the file clearly indicates a status change.
 - If nothing in DevelopmentOS needs updating, set outcome to "no_changes_needed" and explain what you checked.
 - Always send a helpful inbox message, even when no task updates are needed.
@@ -199,46 +205,20 @@ Respond with JSON only:
 
   const plan = syncPlanSchema.parse(parseJsonResponse(response))
 
-  const appliedUpdates: Array<{
-    identifier: string
-    title: string
-    status: string
-    note?: string
-  }> = []
-
-  for (const update of plan.task_updates ?? []) {
-    const normalized = normalizeTaskTitle(update.title)
-    const task = (tasks ?? []).find((item) => normalizeTaskTitle(item.title) === normalized)
-    if (!task || !update.status || task.status === update.status) {
-      continue
-    }
-
-    const { error } = await supabase
-      .from("tasks")
-      .update({
-        status: update.status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", task.id)
-
-    if (!error) {
-      appliedUpdates.push({
-        identifier: task.identifier,
-        title: task.title,
-        status: update.status,
-        note: update.note,
-      })
-    }
-  }
+  const applied = await applyGameStatusMarkdownUpdates(supabase, {
+    projectId: project.id,
+    markdown: file.content,
+    explicitTaskUpdates: plan.task_updates,
+  })
 
   const inboxTitle =
-    appliedUpdates.length > 0
+    applied.applied.length > 0
       ? plan.inbox_title
       : plan.inbox_title.includes("reviewed")
         ? plan.inbox_title
         : `Souls reviewed ${statusPath}`
 
-  const inboxBody = buildInboxBody(plan, appliedUpdates)
+  const inboxBody = buildInboxBody(plan, applied)
 
   const notifiedCount = await notifyProjectMembersSoulsGameStatus(supabase, {
     workspaceId: project.workspace_id,
@@ -258,7 +238,9 @@ Respond with JSON only:
       branch: input.branch,
       commit_sha: input.commitSha,
       outcome: plan.outcome,
-      tasks_updated: appliedUpdates.length,
+      tasks_updated: applied.tasksUpdated,
+      checklist_updates: applied.checklistsUpdated,
+      list_moves: applied.listMoves,
       notifications_sent: notifiedCount,
       inbox_title: inboxTitle,
     },
@@ -269,7 +251,9 @@ Respond with JSON only:
     skipped: false,
     outcome: plan.outcome,
     summary: plan.inbox_body,
-    tasksUpdated: appliedUpdates.length,
+    tasksUpdated: applied.tasksUpdated,
+    checklistsUpdated: applied.checklistsUpdated,
+    listMoves: applied.listMoves,
     notificationsSent: notifiedCount,
   }
 }
