@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { GripVertical, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { GripVertical, MoreHorizontal, Pencil, Sparkles, Trash2 } from "lucide-react"
 import { useDroppable } from "@dnd-kit/core"
 import {
   SortableContext,
@@ -11,6 +11,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 
 import { deleteBoardList, renameBoardList, updateBoardListColor } from "@/lib/actions/board-lists"
+import { triageDevInboxWithSouls } from "@/lib/actions/board-inbox"
 import type { TaskWithPeople } from "@/lib/auth/task-context"
 import type { BoardList } from "@/lib/database.types"
 import {
@@ -46,6 +47,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { listSortableId } from "@/lib/utils/kanban"
+import { isBoardInboxList } from "@/lib/tasks/board-inbox"
+import { useWorkspace } from "@/components/providers/workspace-provider"
+import { useUiStore } from "@/lib/stores/ui-store"
 
 type BoardListColumnProps = {
   list: BoardList
@@ -60,6 +64,7 @@ type BoardListColumnProps = {
   onListDeleted?: (listId: string) => void
   onListUpdated?: (list: BoardList) => void
   onOpenListFocus?: (listId: string) => void
+  onBoardRefresh?: () => Promise<void>
 }
 
 export function BoardListColumn({
@@ -75,7 +80,12 @@ export function BoardListColumn({
   onListDeleted,
   onListUpdated,
   onOpenListFocus,
+  onBoardRefresh,
 }: BoardListColumnProps) {
+  const { activeWorkspace } = useWorkspace()
+  const setSoulsPanelOpen = useUiStore((state) => state.setSoulsPanelOpen)
+  const setSoulsOpenAfterSend = useUiStore((state) => state.setSoulsOpenAfterSend)
+  const isInbox = isBoardInboxList(list)
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: list.id,
     data: { type: "list-drop" },
@@ -149,6 +159,22 @@ export function BoardListColumn({
     })
   }
 
+  function triageInbox() {
+    if (!activeWorkspace || tasks.length === 0) return
+    const formData = new FormData()
+    formData.set("workspaceId", activeWorkspace.id)
+    formData.set("projectId", projectId)
+    formData.set("projectSlug", slug)
+    startTransition(async () => {
+      const result = await triageDevInboxWithSouls({}, formData)
+      if (!result.error) {
+        setSoulsOpenAfterSend(true)
+        setSoulsPanelOpen(true)
+        await onBoardRefresh?.()
+      }
+    })
+  }
+
   return (
     <>
       <div
@@ -204,6 +230,19 @@ export function BoardListColumn({
               </div>
             )}
           </div>
+          {canEdit && !editing && isInbox && tasks.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0"
+              title="Souls triage inbox"
+              disabled={pending}
+              onClick={() => void triageInbox()}
+            >
+              <Sparkles className="size-4 text-primary" />
+            </Button>
+          ) : null}
           {canEdit && !editing ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

@@ -21,7 +21,13 @@ export const SOULS_PRIVATE_SYSTEM_PROMPT = `${SOULS_SYSTEM_PROMPT}
 
 ${SOULS_LORE_PLACEMENT_GUIDE}
 
-**Bulk lore import workflow**
+**Board Inbox triage (dev list named Inbox)**
+- The dev-board **Inbox** list is a staging area for uncategorized cards — not the chat Inbox at /inbox.
+- When asked to triage the board Inbox, route each card to the correct board/list using tasks.move.
+- Mark finished or obsolete cards Done or Deferred with tasks.comment.add explaining why.
+- Check tasks.list and GAME_STATUS alignment before moving — do not duplicate existing work.
+- Work in batches until every Inbox card is placed or you explain what remains unclear.
+
 1. lore.list — see what already exists
 2. lore.collection.create — optional grouping collections
 3. lore.upsert — create/update entries with slug, entryType, summary, sections[], parentSlug (preferred for all new content)

@@ -4,12 +4,16 @@ type UiState = {
   commandPaletteOpen: boolean
   soulsPanelOpen: boolean
   soulsAttachLoreSlug: string | null
+  soulsPrefillBody: string | null
+  soulsOpenAfterSend: boolean
   density: "comfortable" | "compact"
   setCommandPaletteOpen: (open: boolean) => void
   toggleCommandPalette: () => void
   setSoulsPanelOpen: (open: boolean) => void
   toggleSoulsPanel: () => void
   setSoulsAttachLoreSlug: (slug: string | null) => void
+  setSoulsPrefillBody: (body: string | null) => void
+  setSoulsOpenAfterSend: (open: boolean) => void
   setDensity: (density: "comfortable" | "compact") => void
 }
 
@@ -17,6 +21,8 @@ export const useUiStore = create<UiState>((set) => ({
   commandPaletteOpen: false,
   soulsPanelOpen: false,
   soulsAttachLoreSlug: null,
+  soulsPrefillBody: null,
+  soulsOpenAfterSend: false,
   density: "comfortable",
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   toggleCommandPalette: () =>
@@ -24,5 +30,7 @@ export const useUiStore = create<UiState>((set) => ({
   setSoulsPanelOpen: (open) => set({ soulsPanelOpen: open }),
   toggleSoulsPanel: () => set((state) => ({ soulsPanelOpen: !state.soulsPanelOpen })),
   setSoulsAttachLoreSlug: (slug) => set({ soulsAttachLoreSlug: slug }),
+  setSoulsPrefillBody: (body) => set({ soulsPrefillBody: body }),
+  setSoulsOpenAfterSend: (open) => set({ soulsOpenAfterSend: open }),
   setDensity: (density) => set({ density }),
 }))

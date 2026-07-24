@@ -391,6 +391,7 @@ export function KanbanBoard({
                     )
                   }}
                   onOpenListFocus={setFocusListId}
+                  onBoardRefresh={onBoardRefresh}
                 />
               ))}
               <AddBoardList
@@ -423,7 +424,12 @@ export function KanbanBoard({
         }}
         list={focusList}
         tasks={focusList ? board.tasksByList[focusList.id] ?? [] : []}
+        allLists={board.lists}
+        slug={slug}
+        projectId={projectId}
+        canEdit={canEdit}
         onOpenTask={onOpenTask}
+        onBoardRefresh={onBoardRefresh}
       />
     </div>
   )

@@ -68,6 +68,10 @@ export function SoulsSidePanel() {
   const setOpen = useUiStore((state) => state.setSoulsPanelOpen)
   const attachLoreSlug = useUiStore((state) => state.soulsAttachLoreSlug)
   const setAttachLoreSlug = useUiStore((state) => state.setSoulsAttachLoreSlug)
+  const soulsPrefillBody = useUiStore((state) => state.soulsPrefillBody)
+  const setSoulsPrefillBody = useUiStore((state) => state.setSoulsPrefillBody)
+  const soulsOpenAfterSend = useUiStore((state) => state.soulsOpenAfterSend)
+  const setSoulsOpenAfterSend = useUiStore((state) => state.setSoulsOpenAfterSend)
 
   const projectSlug = projectSlugFromPath(pathname)
   const pathLoreSlug = loreSlugFromPath(pathname)
@@ -117,12 +121,24 @@ export function SoulsSidePanel() {
         setInitialMessages(data.messages)
       }
       setLoading(false)
+      if (soulsOpenAfterSend) {
+        setSoulsOpenAfterSend(false)
+        void reloadMessages()
+      }
     })
 
     return () => {
       cancelled = true
     }
-  }, [open, project, activeWorkspace])
+  }, [open, project, activeWorkspace, soulsOpenAfterSend, setSoulsOpenAfterSend, reloadMessages])
+
+  useEffect(() => {
+    if (!open || !soulsPrefillBody) {
+      return
+    }
+    setBody(soulsPrefillBody)
+    setSoulsPrefillBody(null)
+  }, [open, soulsPrefillBody, setSoulsPrefillBody])
 
   useEffect(() => {
     if (!state.success) {
