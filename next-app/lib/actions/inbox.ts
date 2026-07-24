@@ -180,13 +180,19 @@ export async function startDirectInboxThread(
     return { error: "You cannot message yourself." }
   }
 
-  const thread = await getOrCreateDirectInboxThread(supabase, {
-    workspaceId,
-    userId: user.id,
-    peerUserId,
-    peerName,
-  })
+  try {
+    const thread = await getOrCreateDirectInboxThread(supabase, {
+      workspaceId,
+      userId: user.id,
+      peerUserId,
+      peerName,
+    })
 
-  revalidateInbox()
-  return { success: "Opened", threadId: thread.id }
+    revalidateInbox()
+    return { success: "Opened", threadId: thread.id }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not open direct message thread."
+    return { error: message }
+  }
 }

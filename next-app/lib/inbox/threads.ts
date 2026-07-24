@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { Database } from "@/lib/database.types"
 import type { InboxMessage, InboxThread, InboxThreadListItem } from "@/lib/inbox/types"
+import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
 
 type Client = SupabaseClient<Database>
 
@@ -118,6 +119,14 @@ export async function markInboxThreadRead(supabase: Client, threadId: string, us
     .update({ last_read_at: new Date().toISOString() })
     .eq("thread_id", threadId)
     .eq("user_id", userId)
+
+  await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("entity_type", "inbox_thread")
+    .eq("entity_id", threadId)
+    .is("read_at", null)
 }
 
 export async function archiveInboxThread(supabase: Client, threadId: string) {
@@ -128,7 +137,7 @@ export async function archiveInboxThread(supabase: Client, threadId: string) {
 }
 
 export async function getOrCreateDirectInboxThread(
-  supabase: Client,
+  _supabase: Client,
   input: {
     workspaceId: string
     userId: string
@@ -136,9 +145,14 @@ export async function getOrCreateDirectInboxThread(
     peerName: string
   }
 ) {
+  if (!isAdminClientConfigured()) {
+    throw new Error("Direct messages are not configured on the server.")
+  }
+
+  const admin = createAdminClient()
   const { low, high } = orderedPeerPair(input.userId, input.peerUserId)
 
-  const { data: existing } = await supabase
+  const { data: existing } = await admin
     .from("inbox_threads")
     .select("*")
     .eq("workspace_id", input.workspaceId)
@@ -149,10 +163,11 @@ export async function getOrCreateDirectInboxThread(
     .maybeSingle()
 
   if (existing) {
+    await ensureDirectThreadMemberships(existing.id, input.userId, input.peerUserId, admin)
     return existing as InboxThread
   }
 
-  const { data: thread, error } = await supabase
+  const { data: thread, error } = await admin
     .from("inbox_threads")
     .insert({
       workspace_id: input.workspaceId,
@@ -168,17 +183,44 @@ export async function getOrCreateDirectInboxThread(
     throw new Error(error?.message ?? "Could not start direct message thread.")
   }
 
-  const memberRows = [
-    { thread_id: thread.id, user_id: input.userId },
-    { thread_id: thread.id, user_id: input.peerUserId },
-  ]
-
-  const { error: memberError } = await supabase.from("inbox_thread_members").insert(memberRows)
-  if (memberError) {
-    throw new Error(memberError.message)
-  }
+  await ensureDirectThreadMemberships(thread.id, input.userId, input.peerUserId, admin)
 
   return thread as InboxThread
+}
+
+async function ensureDirectThreadMemberships(
+  threadId: string,
+  userId: string,
+  peerUserId: string,
+  adminClient?: Client
+) {
+  const admin = adminClient ?? (isAdminClientConfigured() ? createAdminClient() : null)
+  if (!admin) {
+    return
+  }
+
+  const { data: members } = await admin
+    .from("inbox_thread_members")
+    .select("user_id")
+    .eq("thread_id", threadId)
+
+  const memberIds = new Set((members ?? []).map((row) => row.user_id))
+  const missing = [userId, peerUserId].filter((id) => !memberIds.has(id))
+
+  if (missing.length === 0) {
+    return
+  }
+
+  const { error } = await admin.from("inbox_thread_members").insert(
+    missing.map((id) => ({
+      thread_id: threadId,
+      user_id: id,
+    }))
+  )
+
+  if (error) {
+    throw new Error(error.message)
+  }
 }
 
 export async function getInboxUnreadCount(supabase: Client, workspaceId: string, userId: string) {

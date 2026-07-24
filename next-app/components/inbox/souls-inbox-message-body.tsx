@@ -57,16 +57,23 @@ function formatRelativeTime(iso: string) {
 export function SoulsInboxMessageBody({
   body,
   createdAt,
+  title,
   compact = false,
 }: {
   body: string
   createdAt: string
+  title?: string | null
   compact?: boolean
 }) {
   const { intro, sections } = parseSoulsInboxBody(body)
 
   return (
     <div className="space-y-4">
+      {title ? (
+        <p className="font-serif text-base font-semibold leading-snug text-foreground">
+          {title}
+        </p>
+      ) : null}
       <p
         className={cn(
           "text-sm leading-relaxed text-foreground/90",

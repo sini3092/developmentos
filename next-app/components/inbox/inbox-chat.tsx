@@ -57,14 +57,16 @@ export function InboxChat({
   const router = useRouter()
   const [body, setBody] = useState("")
   const [isPending, startTransition] = useTransition()
+  const [dmError, setDmError] = useState<string | null>(null)
 
   useEffect(() => {
     if (selectedThreadId) {
       startTransition(async () => {
         await markInboxThreadReadAction(selectedThreadId)
+        router.refresh()
       })
     }
-  }, [selectedThreadId])
+  }, [selectedThreadId, router])
 
   const soulsWorking = messages.some((message) => message.status === "working")
 
@@ -109,6 +111,9 @@ export function InboxChat({
 
         {teammates.length > 0 ? (
           <div className="flex flex-wrap gap-2 border-b border-border/60 p-3">
+            {dmError ? (
+              <p className="w-full text-xs text-danger">{dmError}</p>
+            ) : null}
             {teammates.map((member) => (
               <Button
                 key={member.user_id}
@@ -117,12 +122,17 @@ export function InboxChat({
                 variant="outline"
                 disabled={isPending}
                 onClick={() => {
+                  setDmError(null)
                   const formData = new FormData()
                   formData.set("workspaceId", workspaceId)
                   formData.set("peerUserId", member.user_id)
                   formData.set("peerName", member.display_name ?? "Teammate")
                   startTransition(async () => {
                     const result = await startDirectInboxThread({}, formData)
+                    if (result.error) {
+                      setDmError(result.error)
+                      return
+                    }
                     if (result.threadId) {
                       router.push(`/inbox?t=${result.threadId}`)
                       router.refresh()
@@ -241,7 +251,12 @@ export function InboxChat({
                             : "rounded-bl-md border border-border/60 bg-background"
                         )}
                       >
-                      {isSouls && message.metadata && typeof message.metadata.title === "string" ? (
+                      {isSouls &&
+                      typeof message.metadata?.title === "string" &&
+                      !(
+                        selectedThread.kind === "souls_report" &&
+                        messages[0]?.id === message.id
+                      ) ? (
                         <p className="mb-2 font-medium">{String(message.metadata.title)}</p>
                       ) : null}
                       {message.status === "working" ? (
@@ -255,6 +270,11 @@ export function InboxChat({
                         <SoulsInboxMessageBody
                           body={message.body}
                           createdAt={message.created_at}
+                          title={
+                            typeof message.metadata?.title === "string"
+                              ? message.metadata.title
+                              : null
+                          }
                           compact={false}
                         />
                       ) : (

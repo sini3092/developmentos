@@ -16,10 +16,17 @@ export default async function InboxPage({
   const params = await searchParams
   const { threads } = await getInboxView(activeWorkspace!.id, user.id)
 
-  const selectedThreadId = params.t ?? threads[0]?.id ?? null
+  const selectedThreadId =
+    params.t && threads.some((thread) => thread.id === params.t)
+      ? params.t
+      : params.t ?? threads[0]?.id ?? null
   const detail = selectedThreadId
     ? await getInboxThreadDetail(selectedThreadId, user.id)
     : null
+  const selectedThread =
+    detail?.thread ??
+    threads.find((thread) => thread.id === selectedThreadId) ??
+    null
 
   return (
     <div className="flex flex-1 flex-col">
@@ -38,7 +45,7 @@ export default async function InboxPage({
             display_name: member.profile?.display_name ?? null,
           }))}
           selectedThreadId={selectedThreadId}
-          selectedThread={detail?.thread ?? null}
+          selectedThread={selectedThread}
           messages={detail?.messages ?? []}
           projectSlug={detail?.project?.slug ?? null}
           projectId={detail?.project?.id ?? null}
