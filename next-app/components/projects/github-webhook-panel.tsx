@@ -1,7 +1,7 @@
 "use client"
 
-import { useActionState } from "react"
-import { Webhook } from "lucide-react"
+import { useActionState, useState, useTransition } from "react"
+import { Sparkles, Webhook } from "lucide-react"
 
 import { generateProjectGithubWebhookSecret } from "@/lib/actions/github"
 import type { Project } from "@/lib/database.types"
@@ -23,6 +23,9 @@ export function GithubWebhookPanel({
   adminConfigured,
 }: GithubWebhookPanelProps) {
   const [state, formAction, pending] = useActionState(generateProjectGithubWebhookSecret, {})
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [isSyncing, startSync] = useTransition()
 
   const webhookUrl = `${siteUrl}/api/webhooks/github`
   const hasRepo = Boolean(project.github_owner && project.github_repo_name)
@@ -86,6 +89,59 @@ export function GithubWebhookPanel({
             <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
               {state.success}
             </p>
+          ) : null}
+
+          {adminConfigured ? (
+            <div className="space-y-2 rounded-lg border border-border/50 bg-surface-raised/40 p-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-info" />
+                <p className="text-sm font-medium">Souls GAME_STATUS sync</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Run Souls review on the latest GAME_STATUS.md from GitHub and send an Inbox
+                notification. Use this if a webhook redelivery did not trigger Souls.
+              </p>
+              {syncError ? (
+                <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {syncError}
+                </p>
+              ) : null}
+              {syncMessage ? (
+                <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+                  {syncMessage}
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isSyncing}
+                onClick={() => {
+                  setSyncError(null)
+                  setSyncMessage(null)
+                  startSync(async () => {
+                    const response = await fetch(`/api/projects/${slug}/souls/sync-game-status`, {
+                      method: "POST",
+                    })
+                    const data = (await response.json()) as {
+                      error?: string
+                      reason?: string
+                      outcome?: string
+                      notificationsSent?: number
+                    }
+                    if (!response.ok) {
+                      setSyncError(data.error ?? data.reason ?? "Souls sync failed.")
+                      return
+                    }
+                    setSyncMessage(
+                      `Souls reviewed GAME_STATUS (${data.outcome ?? "done"}). Inbox notifications sent: ${data.notificationsSent ?? 0}.`
+                    )
+                  })
+                }}
+              >
+                {isSyncing ? "Souls is reviewing…" : "Run Souls GAME_STATUS sync now"}
+              </Button>
+            </div>
           ) : null}
 
           <form action={formAction}>

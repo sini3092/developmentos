@@ -62,8 +62,10 @@ export async function recordWebhookDelivery(
 export async function processGithubPushEvent(
   supabase: AdminClient,
   project: ProjectRow,
-  payload: GithubPushPayload
+  payload: GithubPushPayload,
+  options?: { logPushActivity?: boolean }
 ) {
+  const logPushActivity = options?.logPushActivity !== false
   const branchName = extractBranchName(payload.ref)
   if (!branchName) {
     return
@@ -88,34 +90,36 @@ export async function processGithubPushEvent(
       ? `Pushed commit to ${branchName}: ${latestCommit.message.split("\n")[0]}`
       : `Pushed ${commitCount} commit${commitCount === 1 ? "" : "s"} to ${branchName}`
 
-  await supabase.rpc("log_github_activity_event", {
-    p_workspace_id: project.workspace_id,
-    p_project_id: project.id,
-    p_event_type: "github.push",
-    p_entity_type: "project",
-    p_entity_id: project.id,
-    p_new_value: {
-      branch_name: branchName,
-      commit_count: commitCount,
-      pusher: payload.pusher.name,
-      commits,
-      latest_commit: latestCommit
-        ? {
-            id: latestCommit.id,
-            message: latestCommit.message,
-            url: latestCommit.url,
-            author: latestCommit.author.name,
-          }
-        : null,
-      compare_url: payload.compare ?? null,
-      repository_url: payload.repository.html_url,
-      before_sha: payload.before ?? null,
-      after_sha: payload.after ?? null,
-      repo_owner: repo.owner,
-      repo_name: repo.name,
-    },
-    p_message: summaryMessage,
-  })
+  if (logPushActivity) {
+    await supabase.rpc("log_github_activity_event", {
+      p_workspace_id: project.workspace_id,
+      p_project_id: project.id,
+      p_event_type: "github.push",
+      p_entity_type: "project",
+      p_entity_id: project.id,
+      p_new_value: {
+        branch_name: branchName,
+        commit_count: commitCount,
+        pusher: payload.pusher.name,
+        commits,
+        latest_commit: latestCommit
+          ? {
+              id: latestCommit.id,
+              message: latestCommit.message,
+              url: latestCommit.url,
+              author: latestCommit.author.name,
+            }
+          : null,
+        compare_url: payload.compare ?? null,
+        repository_url: payload.repository.html_url,
+        before_sha: payload.before ?? null,
+        after_sha: payload.after ?? null,
+        repo_owner: repo.owner,
+        repo_name: repo.name,
+      },
+      p_message: summaryMessage,
+    })
+  }
 
   const { data: branchLinks } = await supabase
     .from("task_github_branches")

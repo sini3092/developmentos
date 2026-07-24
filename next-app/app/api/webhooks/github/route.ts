@@ -1,3 +1,4 @@
+import { after } from "next/server"
 import { NextResponse } from "next/server"
 
 import {
@@ -15,6 +16,7 @@ import {
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
 
 export const runtime = "nodejs"
+export const maxDuration = 300
 
 function extractGithubPayloadText(rawBody: string, contentType: string) {
   if (!rawBody.trim()) {
@@ -108,24 +110,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, ping: true })
   }
 
-  const recorded = await recordWebhookDelivery(supabase, deliveryId, project.id, eventType)
-  if (!recorded) {
-    return NextResponse.json({ ok: true, duplicate: true })
+  const isNewDelivery = await recordWebhookDelivery(supabase, deliveryId, project.id, eventType)
+
+  const runProcessing = async () => {
+    try {
+      if (eventType === "push") {
+        await processGithubPushEvent(supabase, project, payload as GithubPushPayload, {
+          logPushActivity: isNewDelivery,
+        })
+      } else if (eventType === "pull_request") {
+        await processGithubPullRequestEvent(
+          supabase,
+          project,
+          payload as GithubPullRequestPayload
+        )
+      }
+    } catch (error) {
+      console.error("GitHub webhook processing failed:", error)
+    }
   }
 
-  try {
-    if (eventType === "push") {
-      await processGithubPushEvent(supabase, project, payload as GithubPushPayload)
-    } else if (eventType === "pull_request") {
-      await processGithubPullRequestEvent(
-        supabase,
-        project,
-        payload as GithubPullRequestPayload
-      )
-    }
-  } catch (error) {
-    console.error("GitHub webhook processing failed:", error)
-    return NextResponse.json({ error: "Failed to process webhook." }, { status: 500 })
+  if (eventType === "push" || eventType === "pull_request") {
+    after(runProcessing)
+    return NextResponse.json({
+      ok: true,
+      queued: true,
+      redelivery: !isNewDelivery,
+    })
   }
 
   return NextResponse.json({ ok: true })
