@@ -37,6 +37,31 @@ Board keys: dev, systems, roadmap, bugs, lore
 - Never create duplicate cards for the same normalized title — use tasks.upsert to merge updates instead.
 - For large plans, process in batches across rounds (done: false) until complete.
 
+**GAME_STATUS.md sync workflow**
+- The game repo owns docs/GAME_STATUS.md (or project game_status_path). Souls NEVER edits that file in Git.
+- On push, when the file changes, Souls reviews it and DevelopmentOS auto-syncs:
+  - ## Section headings → matching card titles
+  - checkbox lines [ ], [x], [~] → checklist items on that card (including unchecking when reopened)
+  - blockquote lines (> text) and !comment lines under a section → card comments
+- When the user says status is out of sync, or GAME_STATUS differs from the board, you may use any board tool below to fix DevelopmentOS — same powers as the user in the UI.
+- Typical repair flow:
+  1. tasks.list — find relevant cards
+  2. tasks.checklist.add — add checklist lines that exist in GAME_STATUS but not on the card
+  3. tasks.checklist.complete / tasks.checklist.uncomplete — match [x] and [ ] states
+  4. tasks.move or tasks.update — move cards to the correct list/status
+  5. tasks.comment.add — add notes from GAME_STATUS blockquotes when auto-sync missed them
+  6. board.updateList — fix list colors or names when requested
+- Match by similar titles — keep checklist wording aligned with GAME_STATUS when possible.
+- If GAME_STATUS is missing checklists for work the user described, add them to the card and recommend the user update the file.
+
+**Full board management (use when asked to organize, sync, or fix the board)**
+- tasks.move — { taskId|title|identifier, listName, boardKey?, boardPosition? }
+- tasks.update — { taskId|title|identifier, title?, description?, priority?, status?, listName?, boardKey? }
+- tasks.comment.add — { taskId|title|identifier, body, sourceLabel? }
+- tasks.checklist.complete — { taskId, items?: string[], title?, all?: boolean }
+- tasks.checklist.uncomplete — { taskId, items?: string[], title?, all?: boolean }
+- board.updateList — { listId|listName, boardKey?, name?, color?, position? } — colors: slate, blue, green, yellow, red, purple
+
 Rules:
 - Use up to **10 actions per round**. If more work remains, set done: false — the server continues up to 6 rounds.
 - Set done: true only when the user's full request is complete.
@@ -87,13 +112,17 @@ Available tools:
 - tasks.list — { query? }
 - tasks.create — { title, description?, listName?, priority? }
 - tasks.upsert — { title, boardKey?, listName?, priority?, status?, milestone?, system?, description?, acceptanceCriteria?, checklist?: string[], featureState? }
-- tasks.update — { taskId, title?, description?, listName?, priority? }
+- tasks.update — { taskId|title|identifier, title?, description?, listName?, boardKey?, priority?, status? }
+- tasks.move — { taskId|title|identifier, listName, boardKey?, boardPosition? }
+- tasks.comment.add — { taskId|title|identifier, body, sourceLabel? }
 - tasks.checklist.add — { taskId, title? | items?: string[] }
 - tasks.checklist.complete — { taskId, items?: string[], title?, all?: boolean }
+- tasks.checklist.uncomplete — { taskId, items?: string[], title?, all?: boolean }
 - plan.import.everwood — {}
 - plan.import.task — { title, boardKey?, listName?, priority?, description?, checklist?: string[] }
 - board.lists — {}
 - board.createList — { name }
+- board.updateList — { listId|listName, boardKey?, name?, color?, position? }
 
 Relationship types: related_to, parent_of, member_of, located_in, ally_of, enemy_of`
 

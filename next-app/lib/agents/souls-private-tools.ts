@@ -4,9 +4,17 @@ import type { BoardKey } from "@/lib/constants/board-keys"
 import { importEverwoodBoardPlan, upsertPlanTaskCard } from "@/lib/imports/board-plan-importer"
 import type { PlanTaskCard } from "@/lib/imports/everwood-plan-data"
 import { findTaskByTitle } from "@/lib/imports/task-dedup"
-import type { TaskPriority } from "@/lib/database.types"
+import type { TaskPriority, TaskStatus } from "@/lib/database.types"
 import type { SoulsActionResult } from "@/lib/souls/message-metadata"
 import { formatToolError } from "@/lib/agents/tool-errors"
+import {
+  addTaskCommentIfMissing,
+  moveTaskToBoardList,
+  resolveTaskByReference,
+  setTaskChecklistCompletion,
+  updateBoardListForProject,
+  updateTaskFields,
+} from "@/lib/tasks/souls-board-helpers"
 import { createClient } from "@/lib/supabase/server"
 
 type ToolInput = Record<string, unknown>
@@ -123,57 +131,27 @@ export async function executeSoulsPrivateTool(input: {
       }
 
       case "tasks.update": {
-        const taskId = String(input.toolInput.taskId ?? "")
-        if (!taskId) {
-          throw new Error("taskId is required.")
-        }
+        const task = await resolveTaskByReference(supabase, input.projectId, {
+          taskId: input.toolInput.taskId ? String(input.toolInput.taskId) : undefined,
+          title: input.toolInput.title ? String(input.toolInput.title) : undefined,
+          identifier: input.toolInput.identifier ? String(input.toolInput.identifier) : undefined,
+        })
 
-        const { data: before } = await supabase
-          .from("tasks")
-          .select("id, identifier, title, priority, list_id")
-          .eq("id", taskId)
-          .eq("project_id", input.projectId)
-          .maybeSingle()
-
-        if (!before) {
+        if (!task) {
           throw new Error("Task not found.")
         }
 
-        const patch: {
-          title?: string
-          description?: string
-          priority?: TaskPriority
-          list_id?: string
-          updated_at: string
-        } = { updated_at: new Date().toISOString() }
-        if (input.toolInput.title) patch.title = String(input.toolInput.title)
-        if (input.toolInput.description !== undefined) {
-          patch.description = String(input.toolInput.description)
-        }
-        if (input.toolInput.priority) patch.priority = input.toolInput.priority as TaskPriority
-
-        if (input.toolInput.listName) {
-          const { data: list } = await supabase
-            .from("board_lists")
-            .select("id")
-            .eq("project_id", input.projectId)
-            .ilike("name", String(input.toolInput.listName))
-            .maybeSingle()
-          if (list) {
-            patch.list_id = list.id
-          }
-        }
-
-        const { data: after, error } = await supabase
-          .from("tasks")
-          .update(patch)
-          .eq("id", taskId)
-          .select("id, identifier, title, priority, list_id")
-          .single()
-
-        if (error) {
-          throw error
-        }
+        const after = await updateTaskFields(supabase, input.projectId, task.id, {
+          title: input.toolInput.title ? String(input.toolInput.title) : undefined,
+          description:
+            input.toolInput.description !== undefined
+              ? String(input.toolInput.description)
+              : undefined,
+          priority: input.toolInput.priority as TaskPriority | undefined,
+          status: input.toolInput.status as TaskStatus | undefined,
+          listName: input.toolInput.listName ? String(input.toolInput.listName) : undefined,
+          boardKey: input.toolInput.boardKey ? String(input.toolInput.boardKey) : undefined,
+        })
 
         return {
           tool: input.tool,
@@ -181,15 +159,84 @@ export async function executeSoulsPrivateTool(input: {
           status: "success",
           href: `/projects/${input.projectSlug}/tasks/board?task=${after.id}`,
           summary: `Updated ${after.identifier}`,
-          before: before ?? undefined,
+          before: task,
           after,
+        }
+      }
+
+      case "tasks.move": {
+        const task = await resolveTaskByReference(supabase, input.projectId, {
+          taskId: input.toolInput.taskId ? String(input.toolInput.taskId) : undefined,
+          title: input.toolInput.title ? String(input.toolInput.title) : undefined,
+          identifier: input.toolInput.identifier ? String(input.toolInput.identifier) : undefined,
+        })
+
+        if (!task) {
+          throw new Error("Task not found.")
+        }
+
+        const moved = await moveTaskToBoardList(supabase, input.projectId, task.id, {
+          listId: input.toolInput.listId ? String(input.toolInput.listId) : undefined,
+          listName: input.toolInput.listName ? String(input.toolInput.listName) : undefined,
+          boardKey: input.toolInput.boardKey ? String(input.toolInput.boardKey) : undefined,
+          boardPosition:
+            input.toolInput.boardPosition !== undefined
+              ? Number(input.toolInput.boardPosition)
+              : undefined,
+        })
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          href: `/projects/${input.projectSlug}/tasks/board?task=${moved.task.id}`,
+          summary: `Moved ${moved.task.identifier} to ${moved.list.name}`,
+          before: task,
+          after: moved.task,
+        }
+      }
+
+      case "tasks.comment.add": {
+        const task = await resolveTaskByReference(supabase, input.projectId, {
+          taskId: input.toolInput.taskId ? String(input.toolInput.taskId) : undefined,
+          title: input.toolInput.title ? String(input.toolInput.title) : undefined,
+          identifier: input.toolInput.identifier ? String(input.toolInput.identifier) : undefined,
+        })
+
+        if (!task) {
+          throw new Error("Task not found.")
+        }
+
+        const body = String(input.toolInput.body ?? "").trim()
+        if (!body) {
+          throw new Error("Comment body is required.")
+        }
+
+        const added = await addTaskCommentIfMissing(supabase, {
+          taskId: task.id,
+          authorId: input.userId,
+          body,
+          sourceLabel: input.toolInput.sourceLabel
+            ? String(input.toolInput.sourceLabel)
+            : undefined,
+        })
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          href: `/projects/${input.projectSlug}/tasks/board?task=${task.id}`,
+          summary: added.added
+            ? `Added comment to ${task.identifier}`
+            : `Comment already exists on ${task.identifier}`,
+          after: { taskId: task.id, added: added.added },
         }
       }
 
       case "board.lists": {
         const { data } = await supabase
           .from("board_lists")
-          .select("id, name, color, position")
+          .select("id, name, color, position, board_key")
           .eq("project_id", input.projectId)
           .order("position")
 
@@ -215,6 +262,26 @@ export async function executeSoulsPrivateTool(input: {
           status: "success",
           summary: `Created list "${result.list?.name}"`,
           after: result.list ?? undefined,
+        }
+      }
+
+      case "board.updateList": {
+        const list = await updateBoardListForProject(supabase, input.projectId, {
+          listId: input.toolInput.listId ? String(input.toolInput.listId) : undefined,
+          listName: input.toolInput.listName ? String(input.toolInput.listName) : undefined,
+          boardKey: input.toolInput.boardKey ? String(input.toolInput.boardKey) : undefined,
+          name: input.toolInput.name ? String(input.toolInput.name) : undefined,
+          color: input.toolInput.color ? String(input.toolInput.color) : undefined,
+          position:
+            input.toolInput.position !== undefined ? Number(input.toolInput.position) : undefined,
+        })
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          summary: `Updated list "${list.name}"`,
+          after: list,
         }
       }
 
@@ -338,30 +405,11 @@ export async function executeSoulsPrivateTool(input: {
           throw new Error("taskId is required.")
         }
 
-        const { data: checklistItems } = await supabase
-          .from("task_checklist_items")
-          .select("id, title, completed")
-          .eq("task_id", taskId)
-
-        let updated = 0
-        for (const item of checklistItems ?? []) {
-          const shouldComplete = completeAll
-            ? true
-            : items.some((target) => target.toLowerCase() === item.title.trim().toLowerCase())
-
-          if (!shouldComplete || item.completed) {
-            continue
-          }
-
-          await supabase
-            .from("task_checklist_items")
-            .update({
-              completed: true,
-              completed_at: new Date().toISOString(),
-            })
-            .eq("id", item.id)
-          updated += 1
-        }
+        const updated = await setTaskChecklistCompletion(supabase, taskId, {
+          items,
+          completeAll,
+          completed: true,
+        })
 
         const { data: task } = await supabase
           .from("tasks")
@@ -374,6 +422,40 @@ export async function executeSoulsPrivateTool(input: {
           label: input.label,
           status: "success",
           summary: `Completed ${updated} checklist item${updated === 1 ? "" : "s"} on ${task?.identifier ?? "task"}`,
+          after: { taskId, updated },
+        }
+      }
+
+      case "tasks.checklist.uncomplete": {
+        const taskId = String(input.toolInput.taskId ?? "")
+        const uncompleteAll = Boolean(input.toolInput.all)
+        const items = Array.isArray(input.toolInput.items)
+          ? input.toolInput.items.map((item) => String(item).trim()).filter(Boolean)
+          : input.toolInput.title
+            ? [String(input.toolInput.title).trim()]
+            : []
+
+        if (!taskId) {
+          throw new Error("taskId is required.")
+        }
+
+        const updated = await setTaskChecklistCompletion(supabase, taskId, {
+          items,
+          uncompleteAll,
+          completed: false,
+        })
+
+        const { data: task } = await supabase
+          .from("tasks")
+          .select("identifier")
+          .eq("id", taskId)
+          .maybeSingle()
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          summary: `Reopened ${updated} checklist item${updated === 1 ? "" : "s"} on ${task?.identifier ?? "task"}`,
           after: { taskId, updated },
         }
       }

@@ -2,13 +2,21 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { BoardKey } from "@/lib/constants/board-keys"
 import type { Database, TaskStatus } from "@/lib/database.types"
-import { parseGameStatusCheckboxes, textsLikelyMatch } from "@/lib/imports/game-status-parser"
+import {
+  parseGameStatusDocument,
+  type GameStatusCheckbox,
+  textsLikelyMatch,
+} from "@/lib/imports/game-status-parser"
 import {
   resolveListColor,
   resolveListForStatus,
   resolveStatusFromList,
 } from "@/lib/imports/list-workflow"
 import { normalizeTaskTitle } from "@/lib/imports/task-dedup"
+import {
+  addTaskCommentIfMissing,
+  resolveProjectCommentAuthor,
+} from "@/lib/tasks/souls-board-helpers"
 
 type Client = SupabaseClient<Database>
 
@@ -16,12 +24,14 @@ export type GameStatusApplyResult = {
   tasksUpdated: number
   checklistsUpdated: number
   listMoves: number
+  commentsAdded: number
   applied: Array<{
     identifier: string
     title: string
     status?: TaskStatus
     listName?: string
     checklistChanges?: number
+    commentChanges?: number
     note?: string
   }>
 }
@@ -34,19 +44,66 @@ type TaskRow = {
   list_id: string | null
 }
 
-type ListRow = {
-  id: string
-  name: string
-  board_key: string | null
+const DONE_MARKER = "Playable in current build"
+
+function resolveStatusFromCheckboxes(
+  related: GameStatusCheckbox[],
+  current: TaskStatus
+): TaskStatus {
+  const doneCount = related.filter((item) => item.state === "done").length
+  const partialCount = related.filter((item) => item.state === "partial").length
+
+  if (doneCount > 0 && partialCount === 0 && related.every((item) => item.state === "done")) {
+    return "done"
+  }
+  if (partialCount > 0 || doneCount > 0) {
+    return "in_progress"
+  }
+  return current
 }
 
-const DONE_MARKER = "Playable in current build"
+async function syncTaskChecklistItems(
+  supabase: Client,
+  taskId: string,
+  related: GameStatusCheckbox[]
+) {
+  const { data: checklistItems } = await supabase
+    .from("task_checklist_items")
+    .select("id, title, completed")
+    .eq("task_id", taskId)
+
+  let checklistChanges = 0
+  for (const item of checklistItems ?? []) {
+    const match = related.find((checkbox) => textsLikelyMatch(checkbox.text, item.title))
+    if (!match) {
+      continue
+    }
+
+    const shouldComplete = match.state === "done"
+    if (item.completed === shouldComplete) {
+      continue
+    }
+
+    await supabase
+      .from("task_checklist_items")
+      .update({
+        completed: shouldComplete,
+        completed_at: shouldComplete ? new Date().toISOString() : null,
+      })
+      .eq("id", item.id)
+
+    checklistChanges += 1
+  }
+
+  return checklistChanges
+}
 
 export async function applyGameStatusMarkdownUpdates(
   supabase: Client,
   input: {
     projectId: string
     markdown: string
+    commentAuthorId?: string | null
     explicitTaskUpdates?: Array<{
       title: string
       status?: TaskStatus
@@ -54,7 +111,9 @@ export async function applyGameStatusMarkdownUpdates(
     }>
   }
 ): Promise<GameStatusApplyResult> {
-  const checkboxes = parseGameStatusCheckboxes(input.markdown)
+  const document = parseGameStatusDocument(input.markdown)
+  const commentAuthorId =
+    input.commentAuthorId ?? (await resolveProjectCommentAuthor(supabase, input.projectId))
 
   const { data: tasks } = await supabase
     .from("tasks")
@@ -77,26 +136,22 @@ export async function applyGameStatusMarkdownUpdates(
     tasksUpdated: 0,
     checklistsUpdated: 0,
     listMoves: 0,
+    commentsAdded: 0,
     applied: [],
   }
 
   const taskRows = (tasks ?? []) as TaskRow[]
+  const handledTaskIds = new Set<string>()
 
-  for (const task of taskRows) {
-    const related = checkboxes.filter((item) => textsLikelyMatch(item.text, task.title))
-    if (related.length === 0) {
-      continue
-    }
+  async function applySnapshot(
+    task: TaskRow,
+    related: GameStatusCheckbox[],
+    comments: string[],
+    note?: string
+  ) {
+    handledTaskIds.add(task.id)
 
-    const doneCount = related.filter((item) => item.state === "done").length
-    const partialCount = related.filter((item) => item.state === "partial").length
-    const nextStatus: TaskStatus =
-      doneCount > 0 && partialCount === 0
-        ? "done"
-        : partialCount > 0 || doneCount > 0
-          ? "in_progress"
-          : task.status
-
+    const nextStatus = resolveStatusFromCheckboxes(related, task.status)
     const patch: Database["public"]["Tables"]["tasks"]["Update"] = {
       updated_at: new Date().toISOString(),
     }
@@ -124,44 +179,74 @@ export async function applyGameStatusMarkdownUpdates(
       result.tasksUpdated += 1
     }
 
-    const { data: checklistItems } = await supabase
-      .from("task_checklist_items")
-      .select("id, title, completed")
-      .eq("task_id", task.id)
+    const checklistChanges = await syncTaskChecklistItems(supabase, task.id, related)
+    result.checklistsUpdated += checklistChanges
 
-    let checklistChanges = 0
-    for (const item of checklistItems ?? []) {
-      const match = related.find((checkbox) => textsLikelyMatch(checkbox.text, item.title))
-      if (!match) {
-        continue
-      }
-
-      const shouldComplete = match.state === "done"
-      if (item.completed === shouldComplete) {
-        continue
-      }
-
-      await supabase
-        .from("task_checklist_items")
-        .update({
-          completed: shouldComplete,
-          completed_at: shouldComplete ? new Date().toISOString() : null,
+    let commentChanges = 0
+    if (commentAuthorId) {
+      for (const comment of comments) {
+        const added = await addTaskCommentIfMissing(supabase, {
+          taskId: task.id,
+          authorId: commentAuthorId,
+          body: comment,
+          sourceLabel: "GAME_STATUS.md",
         })
-        .eq("id", item.id)
-
-      checklistChanges += 1
-      result.checklistsUpdated += 1
+        if (added.added) {
+          commentChanges += 1
+          result.commentsAdded += 1
+        }
+      }
     }
 
-    if (changed || checklistChanges > 0) {
+    if (changed || checklistChanges > 0 || commentChanges > 0) {
       result.applied.push({
         identifier: task.identifier,
         title: task.title,
         status: patch.status,
         listName,
         checklistChanges,
+        commentChanges,
+        note,
       })
     }
+  }
+
+  for (const section of document.sections) {
+    const task = taskRows.find((row) => textsLikelyMatch(section.title, row.title))
+    if (!task) {
+      continue
+    }
+
+    await applySnapshot(task, section.checkboxes, section.comments)
+  }
+
+  for (const task of taskRows) {
+    if (handledTaskIds.has(task.id)) {
+      continue
+    }
+
+    const related = document.orphanCheckboxes.filter((item) => textsLikelyMatch(item.text, task.title))
+    if (related.length === 0) {
+      continue
+    }
+
+    await applySnapshot(task, related, [])
+  }
+
+  for (const task of taskRows) {
+    if (handledTaskIds.has(task.id)) {
+      continue
+    }
+
+    const related = document.sections
+      .flatMap((section) => section.checkboxes)
+      .filter((item) => textsLikelyMatch(item.text, task.title))
+
+    if (related.length === 0) {
+      continue
+    }
+
+    await applySnapshot(task, related, [])
   }
 
   for (const update of input.explicitTaskUpdates ?? []) {

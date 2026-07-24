@@ -6,6 +6,7 @@ import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import { notifyProjectMembersSoulsGameStatus } from "@/lib/souls/game-status-notifications"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
+import { resolveProjectCommentAuthor } from "@/lib/tasks/souls-board-helpers"
 
 const syncPlanSchema = z.object({
   outcome: z.enum(["changes_applied", "no_changes_needed"]),
@@ -58,6 +59,9 @@ function buildInboxBody(
         update.listName ? `moved to ${update.listName}` : null,
         update.checklistChanges
           ? `${update.checklistChanges} checklist item${update.checklistChanges === 1 ? "" : "s"} updated`
+          : null,
+        update.commentChanges
+          ? `${update.commentChanges} comment${update.commentChanges === 1 ? "" : "s"} added`
           : null,
         update.note ? `(${update.note})` : null,
       ].filter(Boolean)
@@ -175,7 +179,8 @@ Important rules:
 - NEVER modify GAME_STATUS.md yourself. The team owns that file in the game repo.
 - You may recommend manual GAME_STATUS edits in recommended_game_status_notes.
 - You may suggest DevelopmentOS task status updates when GAME_STATUS checkboxes clearly imply progress.
-- The server will automatically match [x], [~], and [ ] checkbox lines to tasks and checklist items, and move dev-board cards between lists when appropriate.
+- The server will automatically match [x], [~], and [ ] checkbox lines to tasks and checklist items, move dev-board cards between lists when appropriate, and add blockquote comments from each ## section to the matching card.
+- Section headings (## Feature Name) should match DevelopmentOS card titles. Blockquotes (> text) and !comment lines under a section become card comments.
 - Do not duplicate work — only update tasks when the file clearly indicates a status change.
 - If nothing in DevelopmentOS needs updating, set outcome to "no_changes_needed" and explain what you checked.
 - Always send a helpful inbox message, even when no task updates are needed.
@@ -205,9 +210,12 @@ Respond with JSON only:
 
   const plan = syncPlanSchema.parse(parseJsonResponse(response))
 
+  const commentAuthorId = await resolveProjectCommentAuthor(supabase, project.id)
+
   const applied = await applyGameStatusMarkdownUpdates(supabase, {
     projectId: project.id,
     markdown: file.content,
+    commentAuthorId,
     explicitTaskUpdates: plan.task_updates,
   })
 
@@ -240,6 +248,7 @@ Respond with JSON only:
       outcome: plan.outcome,
       tasks_updated: applied.tasksUpdated,
       checklist_updates: applied.checklistsUpdated,
+      comments_added: applied.commentsAdded,
       list_moves: applied.listMoves,
       notifications_sent: notifiedCount,
       inbox_title: inboxTitle,
@@ -253,6 +262,7 @@ Respond with JSON only:
     summary: plan.inbox_body,
     tasksUpdated: applied.tasksUpdated,
     checklistsUpdated: applied.checklistsUpdated,
+    commentsAdded: applied.commentsAdded,
     listMoves: applied.listMoves,
     notificationsSent: notifiedCount,
   }
