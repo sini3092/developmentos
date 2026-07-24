@@ -81,13 +81,17 @@ If something is finished in code but not reflected here, the team loses track. I
 |-------|------|
 | **DevelopmentOS boards** | Structured cards, lists, milestones, checklists, ownership |
 | **`docs/GAME_STATUS.md`** | Human-readable truth in the game repo; updated as you work |
+| **`docs/loredoc.md`** | Canonical lore export for coding AIs — Souls writes this from DevelopmentOS lore |
 | **Souls (on push)** | Reads `GAME_STATUS.md`, syncs checklists and card status in DevelopmentOS, sends an Inbox summary |
+| **Souls (docs sync)** | Exports lore → `loredoc.md`; may fill gaps in `GAME_STATUS.md` when roadmap milestones or sections are empty |
 
-**Souls does not edit `GAME_STATUS.md`.** The game repo owns that file. Souls updates DevelopmentOS when the file changes.
+**Coding AIs read `docs/loredoc.md` for lore.** Humans and coding AIs normally edit `GAME_STATUS.md` during development. Souls **usually does not** rewrite your session progress — she syncs **from** the file into DevelopmentOS on push.
+
+**Exception — gap fill:** When roadmap milestones are empty, Inbox/board work is not yet documented, or lore exists in DevelopmentOS but not in Git, Souls may **add missing sections** to `GAME_STATUS.md` (via docs sync or when you ask in chat). She preserves existing content and only fills gaps.
 
 When Souls sees a checkbox marked done in `GAME_STATUS.md` but the matching checklist item is still open in the app, **she marks it complete in DevelopmentOS**. If you reopen a checkbox (`[ ]`), the matching checklist item is unchecked again. Checked items can move dev-board cards toward Done / In Progress.
 
-**Souls can do everything you can do on the board** when asked or when syncing: move cards, change list colors, add comments, add/complete/uncomplete checklist items, and update card status. She does **not** edit `GAME_STATUS.md` in Git — that file stays in the game repo.
+**Souls can do everything you can do on the board** when asked or when syncing: move cards, change list colors, add comments, add/complete/uncomplete checklist items, and update card status. For `GAME_STATUS.md` in Git, prefer editing yourself during sessions; use Souls docs sync when the file is missing structure the board already has.
 
 ---
 
@@ -337,8 +341,30 @@ Souls can:
 - `tasks.checklist.add` — add missing items
 - `tasks.upsert` — create/update cards with checklists
 - Move cards to the correct list/status when progress is clear
+- `docs.sync` — export lore to `docs/loredoc.md` and fill missing `GAME_STATUS.md` sections
 
-Souls **must not** edit `GAME_STATUS.md` in the game repo. Humans and coding AIs own that file.
+Prefer editing `GAME_STATUS.md` yourself during coding sessions. Ask Souls for docs sync when board/lore has content that should appear in Git but does not yet.
+
+---
+
+## loredoc.md — lore for coding AIs
+
+**File location (game repo):** `docs/loredoc.md`  
+**Purpose:** Single lore reference that coding AIs read when they need world-building, canon, or design context.
+
+| Layer | Role |
+|-------|------|
+| **DevelopmentOS Lore** | Canonical entries, sections, relationships — edited in the app |
+| **`docs/loredoc.md`** | Exported markdown for the game repo; Souls maintains this |
+| **Coding AI** | Reads `loredoc.md` for lore; reads `GAME_STATUS.md` for implementation status |
+
+**Workflow:**
+1. Add or update lore in DevelopmentOS (or discuss with Souls in chat — she uses `lore.upsert`).
+2. Run **Sync loredoc + GAME_STATUS** in project settings, or ask Souls to `docs.sync`.
+3. Souls commits `loredoc.md` to GitHub with all non-archived lore entries.
+4. Your coding AI reads `docs/loredoc.md` in the game repo — no need to scrape the app.
+
+If you manually edit `loredoc.md` in Git, tell Souls to import new facts into DevelopmentOS so both stay aligned.
 
 ---
 

@@ -1,5 +1,6 @@
 import { createBoardList } from "@/lib/actions/board-lists"
 import { executeSoulsLoreTool } from "@/lib/agents/souls-lore-tools"
+import { runSoulsRepoDocsSync } from "@/lib/agents/run-souls-repo-docs-sync"
 import type { BoardKey } from "@/lib/constants/board-keys"
 import { importEverwoodBoardPlan, upsertPlanTaskCard } from "@/lib/imports/board-plan-importer"
 import type { PlanTaskCard } from "@/lib/imports/everwood-plan-data"
@@ -534,6 +535,28 @@ export async function executeSoulsPrivateTool(input: {
           summary: `Created ${task?.identifier ?? title}`,
           href: task ? `/projects/${input.projectSlug}/tasks/board?task=${task.id}` : undefined,
           after: task ?? undefined,
+        }
+      }
+
+      case "docs.sync": {
+        const result = await runSoulsRepoDocsSync({
+          projectId: input.projectId,
+          trigger: "souls_private_tool",
+        })
+
+        if (result.skipped) {
+          throw new Error(result.reason ?? "Docs sync skipped.")
+        }
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          summary: result.summary ?? "Docs synced to GitHub.",
+          after: {
+            loreDocCommitted: result.loreDocCommitted,
+            gameStatusCommitted: result.gameStatusCommitted,
+          },
         }
       }
 

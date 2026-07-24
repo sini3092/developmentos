@@ -28,6 +28,9 @@ export function GithubWebhookPanel({
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [isSyncing, startSync] = useTransition()
+  const [docsMessage, setDocsMessage] = useState<string | null>(null)
+  const [docsError, setDocsError] = useState<string | null>(null)
+  const [isDocsSyncing, startDocsSync] = useTransition()
 
   const webhookUrl = `${siteUrl}/api/webhooks/github`
   const hasRepo = Boolean(project.github_owner && project.github_repo_name)
@@ -143,6 +146,63 @@ export function GithubWebhookPanel({
                 }}
               >
                 {isSyncing ? "Souls is reviewing…" : "Run Souls GAME_STATUS sync now"}
+              </Button>
+            </div>
+          ) : null}
+
+          {adminConfigured ? (
+            <div className="space-y-2 rounded-lg border border-border/50 bg-surface-raised/40 p-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-primary" />
+                <p className="text-sm font-medium">Souls lore &amp; docs sync</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Export all DevelopmentOS lore to <code className="font-mono">docs/loredoc.md</code>{" "}
+                for coding AIs, and let Souls fill missing sections in GAME_STATUS.md (empty
+                roadmap milestones, untriaged work, etc.).
+              </p>
+              {docsError ? (
+                <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {docsError}
+                </p>
+              ) : null}
+              {docsMessage ? (
+                <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+                  {docsMessage}
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isDocsSyncing}
+                onClick={() => {
+                  setDocsError(null)
+                  setDocsMessage(null)
+                  startDocsSync(async () => {
+                    const response = await fetch(`/api/projects/${slug}/souls/sync-docs`, {
+                      method: "POST",
+                    })
+                    const data = (await response.json()) as {
+                      error?: string
+                      reason?: string
+                      summary?: string
+                      loreDocCommitted?: boolean
+                      gameStatusCommitted?: boolean
+                    }
+                    if (!response.ok) {
+                      setDocsError(data.error ?? data.reason ?? "Docs sync failed.")
+                      return
+                    }
+                    const parts = [data.summary]
+                    if (data.loreDocCommitted) parts.push("loredoc.md updated.")
+                    if (data.gameStatusCommitted) parts.push("GAME_STATUS.md updated.")
+                    setDocsMessage(parts.filter(Boolean).join(" "))
+                    router.refresh()
+                  })
+                }}
+              >
+                {isDocsSyncing ? "Souls is syncing docs…" : "Sync loredoc + GAME_STATUS now"}
               </Button>
             </div>
           ) : null}

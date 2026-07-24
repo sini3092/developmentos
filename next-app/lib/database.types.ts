@@ -317,6 +317,8 @@ export type Database = {
           github_webhook_secret: string | null
           game_status_path: string
           game_status_sync_enabled: boolean
+          lore_doc_path: string
+          lore_doc_sync_enabled: boolean
         }
         Insert: {
           id?: string
@@ -338,6 +340,8 @@ export type Database = {
           github_webhook_secret?: string | null
           game_status_path?: string
           game_status_sync_enabled?: boolean
+          lore_doc_path?: string
+          lore_doc_sync_enabled?: boolean
         }
         Update: {
           id?: string
@@ -359,6 +363,8 @@ export type Database = {
           github_webhook_secret?: string | null
           game_status_path?: string
           game_status_sync_enabled?: boolean
+          lore_doc_path?: string
+          lore_doc_sync_enabled?: boolean
         }
         Relationships: []
       }

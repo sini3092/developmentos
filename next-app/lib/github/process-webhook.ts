@@ -13,6 +13,10 @@ import {
   runSoulsGameStatusSync,
   shouldRunGameStatusSyncForPush,
 } from "@/lib/agents/run-souls-game-status-sync"
+import {
+  runSoulsRepoDocsSync,
+  shouldRunLoreDocSyncForPush,
+} from "@/lib/agents/run-souls-repo-docs-sync"
 
 type AdminClient = SupabaseClient<Database>
 
@@ -24,6 +28,8 @@ type ProjectRow = {
   github_webhook_secret: string | null
   game_status_path?: string | null
   game_status_sync_enabled?: boolean | null
+  lore_doc_path?: string | null
+  lore_doc_sync_enabled?: boolean | null
 }
 
 export async function findProjectForGithubRepo(
@@ -34,7 +40,7 @@ export async function findProjectForGithubRepo(
   const { data } = await supabase
     .from("projects")
     .select(
-      "id, workspace_id, github_owner, github_repo_name, github_webhook_secret, game_status_path, game_status_sync_enabled"
+      "id, workspace_id, github_owner, github_repo_name, github_webhook_secret, game_status_path, game_status_sync_enabled, lore_doc_path, lore_doc_sync_enabled"
     )
     .eq("github_owner", owner)
     .eq("github_repo_name", name)
@@ -187,13 +193,25 @@ export async function processGithubPushEvent(
     }))
   ) {
     try {
-      await runSoulsGameStatusSync({
+      const result = await runSoulsGameStatusSync({
         projectId: project.id,
         branch: branchName,
         commitSha,
         commits: payload.commits,
         headCommit: payload.head_commit,
       })
+
+      if (!result.skipped) {
+        try {
+          await runSoulsRepoDocsSync({
+            projectId: project.id,
+            branch: branchName,
+            trigger: "after_game_status_sync",
+          })
+        } catch (docsError) {
+          console.error("Souls repo docs sync failed:", docsError)
+        }
+      }
     } catch (error) {
       console.error("Souls GAME_STATUS sync failed:", error)
       await reportSoulsGameStatusSyncFailure({
@@ -203,6 +221,29 @@ export async function processGithubPushEvent(
         statusPath,
         error,
       })
+    }
+  }
+
+  const loreDocPath = project.lore_doc_path ?? "docs/loredoc.md"
+  if (
+    project.lore_doc_sync_enabled !== false &&
+    commitSha &&
+    (await shouldRunLoreDocSyncForPush({
+      projectId: project.id,
+      loreDocPath,
+      commitSha,
+      commits: payload.commits,
+      headCommit: payload.head_commit,
+    }))
+  ) {
+    try {
+      await runSoulsRepoDocsSync({
+        projectId: project.id,
+        branch: branchName,
+        trigger: "loredoc_push",
+      })
+    } catch (error) {
+      console.error("Souls lore doc sync failed:", error)
     }
   }
 }
