@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { archiveInboxThread } from "@/lib/inbox/threads"
 import { createClient } from "@/lib/supabase/server"
 
 export type NotificationActionState = {
@@ -56,6 +57,17 @@ export async function markAllNotificationsRead(workspaceId: string) {
 
 export async function dismissNotification(notificationId: string) {
   const supabase = await createClient()
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("entity_type, entity_id")
+    .eq("id", notificationId)
+    .maybeSingle()
+
+  if (notification?.entity_type === "inbox_thread" && notification.entity_id) {
+    await archiveInboxThread(supabase, notification.entity_id)
+  }
+
   const { error } = await supabase.from("notifications").delete().eq("id", notificationId)
 
   if (error) {

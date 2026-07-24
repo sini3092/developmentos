@@ -52,6 +52,7 @@ export type NotificationType =
   | "lore_comment"
   | "lore_review_resolved"
   | "souls_game_status"
+  | "inbox_direct"
 export type AutomationTriggerType = "task_created" | "task_status_changed" | "task_assigned"
 export type AutomationActionType = "notify_assignee" | "set_task_status" | "add_label"
 export type DocumentStatus =
@@ -533,6 +534,108 @@ export type Database = {
           initiative_id?: string | null
           milestone_id?: string | null
           deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inbox_messages: {
+        Row: {
+          id: string
+          thread_id: string
+          sender_kind: string
+          sender_user_id: string | null
+          body: string
+          metadata: Json
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          thread_id: string
+          sender_kind: string
+          sender_user_id?: string | null
+          body?: string
+          metadata?: Json
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          thread_id?: string
+          sender_kind?: string
+          sender_user_id?: string | null
+          body?: string
+          metadata?: Json
+          status?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      inbox_thread_members: {
+        Row: {
+          thread_id: string
+          user_id: string
+          last_read_at: string | null
+          joined_at: string
+        }
+        Insert: {
+          thread_id: string
+          user_id: string
+          last_read_at?: string | null
+          joined_at?: string
+        }
+        Update: {
+          thread_id?: string
+          user_id?: string
+          last_read_at?: string | null
+          joined_at?: string
+        }
+        Relationships: []
+      }
+      inbox_threads: {
+        Row: {
+          id: string
+          workspace_id: string
+          kind: string
+          project_id: string | null
+          title: string
+          direct_peer_a: string | null
+          direct_peer_b: string | null
+          souls_report_number: number | null
+          metadata: Json
+          last_message_at: string
+          archived_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          kind: string
+          project_id?: string | null
+          title: string
+          direct_peer_a?: string | null
+          direct_peer_b?: string | null
+          souls_report_number?: number | null
+          metadata?: Json
+          last_message_at?: string
+          archived_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          kind?: string
+          project_id?: string | null
+          title?: string
+          direct_peer_a?: string | null
+          direct_peer_b?: string | null
+          souls_report_number?: number | null
+          metadata?: Json
+          last_message_at?: string
+          archived_at?: string | null
           created_at?: string
           updated_at?: string
         }

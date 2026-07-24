@@ -37,4 +37,4 @@ export function SoulsAvatar({ size = "md", className }: SoulsAvatarProps) {
 }
 
 export const SOULS_DISPLAY_NAME = "Souls"
-export const SOULS_TAGLINE = "Cloud chronicler · DevelopmentOS"
+export const SOULS_TAGLINE = "Keeper of Everwood"

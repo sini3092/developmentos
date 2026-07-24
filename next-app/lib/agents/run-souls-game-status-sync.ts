@@ -10,6 +10,7 @@ import {
   type GameStatusCommitFiles,
 } from "@/lib/github/game-status-touched"
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
+import { SOULS_GAME_STATUS_SYNC_SYSTEM_PROMPT } from "@/lib/agents/souls-game-status-sync-prompt"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import { notifyProjectMembersSoulsGameStatus } from "@/lib/souls/game-status-notifications"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
@@ -125,15 +126,17 @@ async function logSoulsGameStatusSyncEvent(
 
 async function notifySoulsGameStatusIssue(
   supabase: ReturnType<typeof createAdminClient>,
-  project: Pick<SyncProject, "id" | "workspace_id" | "slug">,
-  input: { title: string; body: string }
+  project: Pick<SyncProject, "id" | "workspace_id" | "slug" | "name">,
+  input: { title: string; body: string; metadata?: Record<string, unknown> }
 ) {
   return notifyProjectMembersSoulsGameStatus(supabase, {
     workspaceId: project.workspace_id,
     projectId: project.id,
     projectSlug: project.slug,
+    projectName: project.name,
     title: input.title,
     body: input.body,
+    metadata: input.metadata ?? {},
   })
 }
 
@@ -322,30 +325,7 @@ export async function runSoulsGameStatusSync(input: {
     messages: [
       {
         role: "system",
-        content: `You are Souls, the private game development assistant for DevelopmentOS.
-
-Review the pushed GAME_STATUS.md file against DevelopmentOS task data after a Git commit.
-
-Important rules:
-- Write ALL inbox copy in English.
-- NEVER modify GAME_STATUS.md yourself. The team owns that file in the game repo.
-- You may recommend manual GAME_STATUS edits in recommended_game_status_notes.
-- You may suggest DevelopmentOS task status updates when GAME_STATUS checkboxes clearly imply progress.
-- The server will automatically match [x], [~], and [ ] checkbox lines to tasks and checklist items, move dev-board cards between lists when appropriate, add blockquote comments from each ## section to the matching card, create missing cards/checklist items from GAME_STATUS.md, and create missing board lists when needed.
-- Section headings (## Feature Name) should match DevelopmentOS card titles. Blockquotes (> text) and !comment lines under a section become card comments.
-- Do not duplicate work — only update tasks when the file clearly indicates a status change.
-- If nothing in DevelopmentOS needs updating, set outcome to "no_changes_needed" and explain what you checked.
-- Always send a helpful inbox message, even when no task updates are needed.
-- This phase is **tasks only**. A separate automated lore phase runs afterward — do not describe lore work here.
-
-Respond with JSON only:
-{
-  "outcome": "changes_applied" | "no_changes_needed",
-  "inbox_title": "Short inbox title in English",
-  "inbox_body": "2-5 sentences in English explaining what you reviewed and what you did or found",
-  "task_updates": [{ "title": "...", "status": "done|in_progress|backlog|ready|blocked", "note": "..." }],
-  "recommended_game_status_notes": ["optional manual suggestions for the team"]
-}`,
+        content: SOULS_GAME_STATUS_SYNC_SYSTEM_PROMPT,
       },
       {
         role: "user",
@@ -409,8 +389,22 @@ Respond with JSON only:
     workspaceId: project.workspace_id,
     projectId: project.id,
     projectSlug: project.slug,
+    projectName: project.name,
     title: inboxTitle,
     body: inboxBody,
+    metadata: {
+      commit_sha: input.commitSha,
+      branch: input.branch,
+      status_path: statusPath,
+      outcome: plan.outcome,
+      tasks_updated: applied.tasksUpdated,
+      tasks_created: applied.tasksCreated,
+      comments_added: applied.commentsAdded,
+      checklist_updates: applied.checklistsUpdated,
+      list_moves: applied.listMoves,
+      lore_entries_enriched: loreEnrichment.entriesEnriched,
+      lore_rounds: loreEnrichment.rounds,
+    },
   })
 
   await logSoulsGameStatusSyncEvent(supabase, project, {
@@ -461,7 +455,7 @@ export async function reportSoulsGameStatusSyncFailure(input: {
   const supabase = createAdminClient()
   const { data: project } = await supabase
     .from("projects")
-    .select("id, workspace_id, slug")
+    .select("id, workspace_id, slug, name")
     .eq("id", input.projectId)
     .maybeSingle()
 

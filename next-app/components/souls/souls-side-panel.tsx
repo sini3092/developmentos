@@ -144,7 +144,7 @@ export function SoulsSidePanel() {
     if (effectiveLoreSlug) {
       return "Ask Souls to structure this lore, place it in the world, or create tasks…"
     }
-    return "Ask Souls privately — paste lore docs, board plans, structure regions, or create tasks…"
+    return "Discuss lore, plan systems, or ask Souls to structure the world…"
   }, [effectiveLoreSlug])
 
   const submitMessage = () => {

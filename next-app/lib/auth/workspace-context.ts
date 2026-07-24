@@ -12,6 +12,7 @@ import type {
 } from "@/lib/database.types"
 import { createClient } from "@/lib/supabase/server"
 import { getUnreadNotificationCount } from "@/lib/auth/notification-context"
+import { getInboxUnreadCount } from "@/lib/inbox/threads"
 import { ACTIVE_WORKSPACE_COOKIE } from "@/lib/utils/format"
 
 export type WorkspaceContext = {
@@ -98,7 +99,8 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
   let projects: ProjectWithMembership[] = []
 
   if (activeWorkspace) {
-    const [memberResult, projects, invitationsResult, unreadNotificationCount] = await Promise.all([
+    const [memberResult, projects, invitationsResult, unreadNotificationCount, inboxUnreadCount] =
+      await Promise.all([
       supabase.from("workspace_members").select("*").eq("workspace_id", activeWorkspace.id),
       fetchWorkspaceProjects(activeWorkspace.id, user.id),
       activeWorkspace.role === "owner" || activeWorkspace.role === "project_lead"
@@ -110,6 +112,7 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
             .order("created_at", { ascending: false })
         : Promise.resolve({ data: [] as WorkspaceInvitation[] }),
       getUnreadNotificationCount(activeWorkspace.id, user.id),
+      getInboxUnreadCount(supabase, activeWorkspace.id, user.id),
     ])
 
     const memberRows = memberResult.data
@@ -141,7 +144,7 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
       projects,
       canCreateProjects:
         activeWorkspace.role === "owner" || activeWorkspace.role === "project_lead",
-      unreadNotificationCount,
+      unreadNotificationCount: unreadNotificationCount + inboxUnreadCount,
     }
   }
 

@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp } from "lucide-react"
 
 import { SoulsActionCard, SoulsWorkingSteps } from "@/components/souls/souls-action-card"
 import type { SoulsPrivateMessage } from "@/lib/database.types"
+import { SOULS_WELCOME_MESSAGE } from "@/lib/agents/personalities"
 import { useStickToBottom } from "@/hooks/use-stick-to-bottom"
 import { parseSoulsMessageMetadata } from "@/lib/souls/message-metadata"
 import { cn } from "@/lib/utils"
@@ -42,10 +43,9 @@ export function SoulsMessageList({ messages }: { messages: SoulsPrivateMessage[]
   if (messages.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
-        <p className="font-serif text-lg font-medium">Private counsel</p>
-        <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-          Only you and Souls see this thread. Send lore, ask for structure, or let her
-          create tasks on the board.
+        <p className="font-serif text-lg font-medium">Souls</p>
+        <p className="mt-3 max-w-sm whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+          {SOULS_WELCOME_MESSAGE}
         </p>
       </div>
     )

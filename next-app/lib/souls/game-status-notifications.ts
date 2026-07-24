@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { revalidatePath } from "next/cache"
 
+import { createSoulsInboxReport } from "@/lib/inbox/create-souls-report"
 import type { Database } from "@/lib/database.types"
 import { processPushQueue } from "@/lib/push/send"
 
@@ -12,8 +13,10 @@ export async function notifyProjectMembersSoulsGameStatus(
     workspaceId: string
     projectId: string
     projectSlug: string
+    projectName: string
     title: string
     body: string
+    metadata: Record<string, unknown>
   }
 ) {
   const { data: members } = await supabase
@@ -25,7 +28,7 @@ export async function notifyProjectMembersSoulsGameStatus(
 
   const { data: project } = await supabase
     .from("projects")
-    .select("created_by")
+    .select("created_by, name")
     .eq("id", input.projectId)
     .maybeSingle()
 
@@ -37,31 +40,34 @@ export async function notifyProjectMembersSoulsGameStatus(
     return 0
   }
 
-  const rows = [...userIds].map((userId) => ({
-    workspace_id: input.workspaceId,
-    user_id: userId,
-    type: "souls_game_status" as const,
-    title: input.title,
-    body: input.body,
-    link: `/projects/${input.projectSlug}/tasks/board`,
-    entity_type: "project",
-    entity_id: input.projectId,
-  }))
+  const projectName = input.projectName || project?.name || "Project"
+  let created = 0
 
-  const { data: inserted, error } = await supabase.from("notifications").insert(rows).select("id, user_id")
-  if (error) {
-    throw new Error(error.message)
-  }
+  for (const userId of userIds) {
+    const { threadId, reportNumber } = await createSoulsInboxReport(supabase, {
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      projectName,
+      userId,
+      title: input.title,
+      body: input.body,
+      metadata: input.metadata,
+    })
 
-  if (inserted?.length) {
-    await Promise.all(
-      inserted.map((row) =>
-        supabase
-          .from("notifications")
-          .update({ link: `/inbox?n=${row.id}` })
-          .eq("id", row.id)
-      )
-    )
+    const { error } = await supabase.from("notifications").insert({
+      workspace_id: input.workspaceId,
+      user_id: userId,
+      type: "souls_game_status",
+      title: input.title,
+      body: `Souls report #${reportNumber} · ${projectName}`,
+      link: `/inbox?t=${threadId}`,
+      entity_type: "inbox_thread",
+      entity_id: threadId,
+    })
+
+    if (!error) {
+      created += 1
+    }
   }
 
   revalidatePath("/inbox")
@@ -69,5 +75,5 @@ export async function notifyProjectMembersSoulsGameStatus(
 
   await processPushQueue()
 
-  return rows.length
+  return created
 }
