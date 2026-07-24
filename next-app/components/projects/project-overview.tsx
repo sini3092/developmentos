@@ -10,6 +10,7 @@ import {
 
 import { InitiativeCard } from "@/components/roadmap/initiative-card"
 import { ProgressBar } from "@/components/roadmap/progress-bar"
+import { RoadmapBoardBreakdown } from "@/components/roadmap/roadmap-board-breakdown"
 import { RoadmapStatusPipeline } from "@/components/roadmap/roadmap-status-pipeline"
 import { RoadmapTaskList } from "@/components/roadmap/roadmap-task-list"
 import { Button } from "@/components/ui/button"
@@ -136,6 +137,8 @@ export function ProjectOverview({ slug, view, memberCount }: ProjectOverviewProp
           </Link>
         </Button>
       </div>
+
+      <RoadmapBoardBreakdown slug={slug} view={view} />
 
       <section className="space-y-3">
         <div>

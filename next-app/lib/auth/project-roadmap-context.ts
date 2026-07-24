@@ -1,4 +1,5 @@
 import type { InitiativeWithOwner, Profile } from "@/lib/database.types"
+import { BOARD_KEYS, BOARD_KEY_ORDER, type BoardKey } from "@/lib/constants/board-keys"
 import { createClient } from "@/lib/supabase/server"
 import { getProjectGithubHistory, type GithubHistoryEvent } from "@/lib/auth/github-history-context"
 import {
@@ -10,6 +11,7 @@ import {
   type RoadmapListBucket,
 } from "@/lib/utils/roadmap"
 import { getProjectInitiatives } from "@/lib/auth/roadmap-context"
+import { isLoreStub } from "@/lib/lore/stub-detection"
 
 export type RoadmapTaskItem = {
   id: string
@@ -37,9 +39,28 @@ export type RoadmapActivityItem =
       task: RoadmapTaskItem
     }
 
+export type RoadmapBoardBucket = {
+  boardKey: BoardKey
+  label: string
+  totalTasks: number
+  doneTasks: number
+  inProgressTasks: number
+  averageProgress: number
+  listBreakdown: RoadmapListBucket[]
+}
+
+export type LoreHealthSummary = {
+  totalEntries: number
+  enrichedEntries: number
+  stubEntries: number
+}
+
 export type ProjectRoadmapView = {
   breakdown: InitiativeTaskBreakdown
   listBreakdown: RoadmapListBucket[]
+  boardBreakdown: RoadmapBoardBucket[]
+  systemsListBreakdown: RoadmapListBucket[]
+  loreHealth: LoreHealthSummary
   totalTasks: number
   doneTasks: number
   openTasks: number
@@ -84,10 +105,47 @@ function buildRecentActivity(
     .slice(0, 20)
 }
 
+function buildBoardBreakdown(
+  tasks: Array<{ list_id: string | null; progress?: number | null }>,
+  lists: Array<{ id: string; name: string; color: string; board_key: string | null }>
+): RoadmapBoardBucket[] {
+  return BOARD_KEY_ORDER.map((boardKey) => {
+    const boardLists = lists.filter((list) => list.board_key === boardKey)
+    const boardListIds = new Set(boardLists.map((list) => list.id))
+    const boardTasks = tasks.filter(
+      (task) => task.list_id && boardListIds.has(task.list_id)
+    )
+
+    const rows = boardTasks.map((task) => ({ progress: task.progress ?? 0 }))
+    const doneTasks = rows.filter((task) => isTaskComplete(task.progress)).length
+    const inProgressTasks = rows.filter((task) => isTaskInProgress(task.progress)).length
+    const averageProgress =
+      rows.length > 0
+        ? Math.round(rows.reduce((sum, task) => sum + task.progress, 0) / rows.length)
+        : 0
+
+    const listBreakdown = buildListBreakdown(
+      boardTasks.map((task) => ({ list_id: task.list_id })),
+      boardLists
+    )
+
+    return {
+      boardKey,
+      label: BOARD_KEYS[boardKey],
+      totalTasks: boardTasks.length,
+      doneTasks,
+      inProgressTasks,
+      averageProgress,
+      listBreakdown,
+    }
+  }).filter((bucket) => bucket.totalTasks > 0 || bucket.boardKey === "systems" || bucket.boardKey === "dev")
+}
+
 export async function getProjectRoadmapView(projectId: string): Promise<ProjectRoadmapView> {
   const supabase = await createClient()
 
-  const [{ data: tasks }, { data: lists }, initiatives, githubEvents] = await Promise.all([
+  const [{ data: tasks }, { data: lists }, initiatives, githubEvents, { data: loreEntries }] =
+    await Promise.all([
     supabase
       .from("tasks")
       .select(
@@ -99,11 +157,16 @@ export async function getProjectRoadmapView(projectId: string): Promise<ProjectR
       .order("updated_at", { ascending: false }),
     supabase
       .from("board_lists")
-      .select("id, name, color, position")
+      .select("id, name, color, position, board_key")
       .eq("project_id", projectId)
       .order("position", { ascending: true }),
     getProjectInitiatives(projectId),
     getProjectGithubHistory(projectId, 25),
+    supabase
+      .from("lore_entries")
+      .select("id, summary, content, canon_status")
+      .eq("project_id", projectId)
+      .neq("canon_status", "archived"),
   ])
 
   const taskRows = tasks ?? []
@@ -151,6 +214,18 @@ export async function getProjectRoadmapView(projectId: string): Promise<ProjectR
 
   const breakdown = buildTaskBreakdown(rows)
   const listBreakdown = buildListBreakdown(taskRows, listRows)
+  const boardBreakdown = buildBoardBreakdown(taskRows, listRows)
+  const systemsListBreakdown =
+    boardBreakdown.find((bucket) => bucket.boardKey === "systems")?.listBreakdown ?? []
+
+  const loreRows = loreEntries ?? []
+  const stubEntries = loreRows.filter((entry) => isLoreStub(entry)).length
+  const loreHealth: LoreHealthSummary = {
+    totalEntries: loreRows.length,
+    enrichedEntries: loreRows.length - stubEntries,
+    stubEntries,
+  }
+
   const doneTasks = rows.filter((task) => isTaskComplete(task.progress))
   const openTasks = rows.filter((task) => !isTaskComplete(task.progress))
   const activeWork = rows.filter((task) => isTaskInProgress(task.progress))
@@ -180,6 +255,9 @@ export async function getProjectRoadmapView(projectId: string): Promise<ProjectR
   return {
     breakdown,
     listBreakdown,
+    boardBreakdown,
+    systemsListBreakdown,
+    loreHealth,
     totalTasks: rows.length,
     doneTasks: doneTasks.length,
     openTasks: openTasks.length,

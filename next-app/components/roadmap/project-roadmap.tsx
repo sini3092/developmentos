@@ -9,6 +9,7 @@ import type { ProjectMemberWithProfile } from "@/lib/database.types"
 import { CreateInitiativeForm } from "@/components/roadmap/create-initiative-form"
 import { InitiativeCard } from "@/components/roadmap/initiative-card"
 import { ProjectRoadmapOverview } from "@/components/roadmap/project-roadmap-overview"
+import { RoadmapBoardBreakdown } from "@/components/roadmap/roadmap-board-breakdown"
 import { RoadmapGithubSection, RoadmapProjectActivity } from "@/components/roadmap/roadmap-project-activity"
 import { RoadmapStatusPipeline } from "@/components/roadmap/roadmap-status-pipeline"
 import { RoadmapTaskList } from "@/components/roadmap/roadmap-task-list"
@@ -43,6 +44,8 @@ export function ProjectRoadmap({
   return (
     <div className="flex flex-1 flex-col gap-8 p-6">
       <ProjectRoadmapOverview view={view} slug={slug} />
+
+      <RoadmapBoardBreakdown slug={slug} view={view} />
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">

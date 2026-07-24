@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { runSoulsGameStatusLoreEnrichment } from "@/lib/agents/run-souls-game-status-lore"
+import type { GameStatusLoreEnrichmentResult } from "@/lib/agents/run-souls-game-status-lore"
 import { applyGameStatusMarkdownUpdates } from "@/lib/imports/apply-game-status-updates"
 import { getGithubCommitChangedFiles, getGithubFileContent } from "@/lib/github/content"
 import {
@@ -49,7 +51,8 @@ function parseJsonResponse(text: string) {
 
 function buildInboxBody(
   plan: z.infer<typeof syncPlanSchema>,
-  applied: Awaited<ReturnType<typeof applyGameStatusMarkdownUpdates>>
+  applied: Awaited<ReturnType<typeof applyGameStatusMarkdownUpdates>>,
+  lore?: GameStatusLoreEnrichmentResult
 ) {
   const lines = [plan.inbox_body.trim()]
 
@@ -70,6 +73,15 @@ function buildInboxBody(
       ].filter(Boolean)
       lines.push(parts.join(" · "))
     }
+  }
+
+  if (lore && !lore.skipped && lore.entriesEnriched > 0) {
+    lines.push(
+      "",
+      `Lore enriched: ${lore.entriesEnriched} entr${lore.entriesEnriched === 1 ? "y" : "ies"} updated across ${lore.rounds} round${lore.rounds === 1 ? "" : "s"}.`
+    )
+  } else if (lore && !lore.skipped && lore.rounds > 0) {
+    lines.push("", "Lore review: checked thin entries — no new lore content was needed this push.")
   }
 
   if (plan.recommended_game_status_notes?.length) {
@@ -324,6 +336,7 @@ Important rules:
 - Do not duplicate work — only update tasks when the file clearly indicates a status change.
 - If nothing in DevelopmentOS needs updating, set outcome to "no_changes_needed" and explain what you checked.
 - Always send a helpful inbox message, even when no task updates are needed.
+- This phase is **tasks only**. A separate automated lore phase runs afterward — do not describe lore work here.
 
 Respond with JSON only:
 {
@@ -361,6 +374,28 @@ Respond with JSON only:
     explicitTaskUpdates: plan.task_updates,
   })
 
+  let loreEnrichment: GameStatusLoreEnrichmentResult = {
+    skipped: true,
+    reason: "Not started",
+    rounds: 0,
+    entriesEnriched: 0,
+    actions: [],
+  }
+
+  try {
+    loreEnrichment = await runSoulsGameStatusLoreEnrichment({
+      projectId: project.id,
+      projectSlug: project.slug,
+      workspaceId: project.workspace_id,
+      gameStatusMarkdown: file.content,
+      statusPath,
+      branch: input.branch,
+      commitSha: input.commitSha,
+    })
+  } catch (error) {
+    console.error("Souls GAME_STATUS lore enrichment failed:", error)
+  }
+
   const inboxTitle =
     applied.applied.length > 0
       ? plan.inbox_title
@@ -368,7 +403,7 @@ Respond with JSON only:
         ? plan.inbox_title
         : `Souls reviewed ${statusPath}`
 
-  const inboxBody = buildInboxBody(plan, applied)
+  const inboxBody = buildInboxBody(plan, applied, loreEnrichment)
 
   const notifiedCount = await notifyProjectMembersSoulsGameStatus(supabase, {
     workspaceId: project.workspace_id,
@@ -391,6 +426,8 @@ Respond with JSON only:
       checklist_items_added: applied.checklistsAdded,
       comments_added: applied.commentsAdded,
       list_moves: applied.listMoves,
+      lore_entries_enriched: loreEnrichment.entriesEnriched,
+      lore_rounds: loreEnrichment.rounds,
       notifications_sent: notifiedCount,
       inbox_title: inboxTitle,
     },

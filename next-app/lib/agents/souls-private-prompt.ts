@@ -56,6 +56,13 @@ Board keys: dev, systems, roadmap, bugs, lore
 - Match by similar titles — keep checklist wording aligned with GAME_STATUS when possible.
 - If GAME_STATUS is missing checklists for work the user described, add them to the card and recommend the user update the file.
 
+**GAME_STATUS automated lore phase (separate from tasks)**
+- After each GAME_STATUS push, DevelopmentOS runs a **lore-only** follow-up in rounds (up to 4).
+- That phase enriches thin lore stubs (e.g. "Imported from Everwood board plan") with real sections[] content from narrative GAME_STATUS sections.
+- In private chat: keep **tasks** (cards, checklists, lists) and **lore** (entries, sections, relationships) clearly separate.
+- Never put implementation checklists into lore entries. Never put world-building prose onto task cards unless the user asks for a design note comment.
+- When enriching lore manually, use lore.upsert with summary + sections[] (overview + domain sections). Placeholder one-liners are not acceptable.
+
 **Full board management (use when asked to organize, sync, or fix the board)**
 - tasks.move — { taskId|title|identifier, listName, boardKey?, boardPosition? }
 - tasks.update — { taskId|title|identifier, title?, description?, priority?, status?, listName?, boardKey? }
