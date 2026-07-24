@@ -155,6 +155,9 @@ export function TaskBoardLive({
     if (filters.milestoneId && filters.milestoneId !== "all") {
       params.set("milestone", filters.milestoneId)
     }
+    if (filters.workState && filters.workState !== "all") {
+      params.set("work", filters.workState)
+    }
 
     const taskId = new URLSearchParams(window.location.search).get("task")
     if (taskId) params.set("task", taskId)

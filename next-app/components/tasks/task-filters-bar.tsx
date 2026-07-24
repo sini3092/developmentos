@@ -66,6 +66,7 @@ export function TaskFiltersBar({
   const disciplineFilter = filters?.discipline ?? "all"
   const labelFilter = filters?.labelId ?? "all"
   const milestoneFilter = filters?.milestoneId ?? "all"
+  const workStateFilter = filters?.workState ?? "all"
 
   useEffect(() => {
     if (defaultListId) {
@@ -120,6 +121,9 @@ export function TaskFiltersBar({
       case "search":
         next.search = value || undefined
         break
+      case "workState":
+        next.workState = (value || "all") as TaskListFilters["workState"]
+        break
     }
 
     startTransition(() => {
@@ -128,7 +132,35 @@ export function TaskFiltersBar({
   }
 
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        <FilterButton
+          active={workStateFilter === "all"}
+          onClick={() => updateFilter("workState", "all")}
+        >
+          All work
+        </FilterButton>
+        <FilterButton
+          active={workStateFilter === "workable"}
+          onClick={() => updateFilter("workState", "workable")}
+        >
+          Ready to start
+        </FilterButton>
+        <FilterButton
+          active={workStateFilter === "not_started"}
+          onClick={() => updateFilter("workState", "not_started")}
+        >
+          Not started
+        </FilterButton>
+        <FilterButton
+          active={workStateFilter === "started"}
+          onClick={() => updateFilter("workState", "started")}
+        >
+          In progress
+        </FilterButton>
+      </div>
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
       <div className="flex flex-wrap gap-2">
         <FilterButton active={listFilter === "all"} onClick={() => updateFilter("listId", "all")}>
           All lists
@@ -251,6 +283,7 @@ export function TaskFiltersBar({
           <span className="text-xs text-muted-foreground">Create a list before adding cards</span>
         ) : null}
       </div>
+    </div>
     </div>
   )
 }

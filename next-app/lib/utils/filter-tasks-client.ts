@@ -1,7 +1,21 @@
 import type { TaskListFilters, TaskWithPeople } from "@/lib/auth/task-context"
+import { isTaskInProgress } from "@/lib/utils/roadmap"
+import { isTaskOpen } from "@/lib/utils/task-workflow"
+
+function isTaskNotStarted(task: TaskWithPeople) {
+  if (!isTaskOpen(task)) {
+    return false
+  }
+  return (task.progress ?? 0) === 0
+}
+
+function isTaskWorkable(task: TaskWithPeople) {
+  return isTaskNotStarted(task) && task.status !== "blocked"
+}
 
 export function filterTasksClient(tasks: TaskWithPeople[], filters: TaskListFilters) {
   const search = filters.search?.trim().toLowerCase()
+  const workState = filters.workState ?? "all"
 
   return tasks.filter((task) => {
     if (filters.status && filters.status !== "all" && task.status !== filters.status) {
@@ -49,6 +63,18 @@ export function filterTasksClient(tasks: TaskWithPeople[], filters: TaskListFilt
       if (!haystack.includes(search)) {
         return false
       }
+    }
+
+    if (workState === "started" && !isTaskInProgress(task.progress)) {
+      return false
+    }
+
+    if (workState === "not_started" && !isTaskNotStarted(task)) {
+      return false
+    }
+
+    if (workState === "workable" && !isTaskWorkable(task)) {
+      return false
     }
 
     return true

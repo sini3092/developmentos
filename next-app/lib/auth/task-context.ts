@@ -73,6 +73,8 @@ export type TaskDetail = TaskWithPeople & {
   blocks: TaskLinkedDependency[]
 }
 
+export type TaskWorkState = "all" | "workable" | "not_started" | "started"
+
 export type TaskListFilters = {
   status?: TaskStatus | "all"
   listId?: string | "all"
@@ -82,6 +84,7 @@ export type TaskListFilters = {
   discipline?: Discipline | "all"
   labelId?: string | "all"
   milestoneId?: string | "all"
+  workState?: TaskWorkState
 }
 
 export async function getProjectTasks(
