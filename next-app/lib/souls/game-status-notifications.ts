@@ -48,9 +48,20 @@ export async function notifyProjectMembersSoulsGameStatus(
     entity_id: input.projectId,
   }))
 
-  const { error } = await supabase.from("notifications").insert(rows)
+  const { data: inserted, error } = await supabase.from("notifications").insert(rows).select("id, user_id")
   if (error) {
     throw new Error(error.message)
+  }
+
+  if (inserted?.length) {
+    await Promise.all(
+      inserted.map((row) =>
+        supabase
+          .from("notifications")
+          .update({ link: `/inbox?n=${row.id}` })
+          .eq("id", row.id)
+      )
+    )
   }
 
   revalidatePath("/inbox")

@@ -7,19 +7,33 @@ import { requireWorkspaceContext } from "@/lib/auth/workspace-context"
 
 export const dynamic = "force-dynamic"
 
-export default async function InboxPage() {
-  const { activeWorkspace, user } = await requireWorkspaceContext()
+export default async function InboxPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ n?: string }>
+}) {
+  const { activeWorkspace, user, projects } = await requireWorkspaceContext()
+  const params = await searchParams
   const notifications = await getNotifications(activeWorkspace!.id, user.id)
+
+  const projectsById = Object.fromEntries(
+    projects.map((project) => [project.id, { name: project.name, slug: project.slug }])
+  )
 
   return (
     <div className="flex flex-1 flex-col">
       <PageHeader
         title="Inbox"
-        description="Actionable notifications — assignments, mentions, reviews, and update requests."
+        description="Messages from Souls, assignments, mentions, and project updates."
         icon={Inbox}
       />
       <div className="p-6">
-        <InboxList notifications={notifications} workspaceId={activeWorkspace!.id} />
+        <InboxList
+          notifications={notifications}
+          workspaceId={activeWorkspace!.id}
+          projectsById={projectsById}
+          openNotificationId={params.n ?? null}
+        />
       </div>
     </div>
   )
