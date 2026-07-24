@@ -11,7 +11,8 @@ import {
   type PlanTaskCard,
   type PlanChecklistItem,
 } from "@/lib/imports/everwood-plan-data"
-import { findTaskByTitle, loadProjectTaskTitleIndex, normalizeTaskTitle } from "@/lib/imports/task-dedup"
+import { findTaskByTitleFuzzy, loadProjectTaskTitleIndex, normalizeTaskTitle } from "@/lib/imports/task-dedup"
+import { textsLikelyMatch } from "@/lib/imports/game-status-parser"
 import type { Database, TaskPriority } from "@/lib/database.types"
 import { slugify } from "@/lib/utils/format"
 import {
@@ -135,6 +136,52 @@ async function ensureBoardLists(
   }
 
   return { listMap: result, listsCreated, listsReused }
+}
+
+export async function ensureProjectBoardList(
+  supabase: Client,
+  projectId: string,
+  boardKey: BoardKey,
+  listName: string
+) {
+  const trimmed = listName.trim()
+  if (!trimmed) {
+    throw new Error("List name is required.")
+  }
+
+  const { listMap, listsCreated } = await ensureBoardLists(supabase, projectId, [boardKey])
+  const key = listKey(boardKey, trimmed)
+  const existingId = listMap.get(key)
+  if (existingId) {
+    return { listId: existingId, created: false, listsCreated }
+  }
+
+  const { data: last } = await supabase
+    .from("board_lists")
+    .select("position")
+    .eq("project_id", projectId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const color = resolveListColor(boardKey, trimmed)
+  const { data, error } = await supabase
+    .from("board_lists")
+    .insert({
+      project_id: projectId,
+      name: trimmed,
+      board_key: boardKey,
+      position: (last?.position ?? 0) + 1000,
+      color,
+    })
+    .select("id")
+    .single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? `Could not create list ${trimmed}`)
+  }
+
+  return { listId: data.id, created: true, listsCreated: listsCreated + 1 }
 }
 
 async function ensureMilestones(
@@ -347,7 +394,9 @@ async function upsertChecklistItems(
       continue
     }
 
-    const current = existingByTitle.get(title.toLowerCase())
+    const current =
+      existingByTitle.get(title.toLowerCase()) ??
+      (existing ?? []).find((item) => textsLikelyMatch(title, item.title))
     if (current) {
       if (current.completed !== completed) {
         await supabase
@@ -400,11 +449,11 @@ async function upsertPlanTask(
     throw new Error(`Missing list ${input.card.boardKey}/${input.card.listName}`)
   }
 
-  const existing = await findTaskByTitle(supabase, input.projectId, input.card.title, {
+  const existing = await findTaskByTitleFuzzy(supabase, input.projectId, input.card.title, {
     boardKey: input.card.boardKey,
   })
 
-  const fallbackId = input.titleIndex.get(normalizeTaskTitle(input.card.title))?.id
+  const fallbackId = existing?.id ?? input.titleIndex.get(normalizeTaskTitle(input.card.title))?.id
 
   const description = buildTaskDescription(input.card)
   const milestoneId = input.card.milestone

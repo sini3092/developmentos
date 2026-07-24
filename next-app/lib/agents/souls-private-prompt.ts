@@ -40,9 +40,11 @@ Board keys: dev, systems, roadmap, bugs, lore
 **GAME_STATUS.md sync workflow**
 - The game repo owns docs/GAME_STATUS.md (or project game_status_path). Souls NEVER edits that file in Git.
 - On push, when the file changes, Souls reviews it and DevelopmentOS auto-syncs:
-  - ## Section headings → matching card titles
-  - checkbox lines [ ], [x], [~] → checklist items on that card (including unchecking when reopened)
+  - ## Section headings → matching card titles (creates missing cards)
+  - checkbox lines [ ], [x], [~] → checklist items on that card (adds missing items, including unchecking when reopened)
   - blockquote lines (> text) and !comment lines under a section → card comments
+  - Planned next section → creates dev-board Planned cards for unchecked lines without a card
+  - missing board lists → created on systems/dev board when provisioning cards
 - When the user says status is out of sync, or GAME_STATUS differs from the board, you may use any board tool below to fix DevelopmentOS — same powers as the user in the UI.
 - Typical repair flow:
   1. tasks.list — find relevant cards

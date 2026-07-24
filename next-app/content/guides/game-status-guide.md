@@ -187,28 +187,32 @@ Copy and adapt this for every feature:
 Organize by what helps you navigate — common patterns:
 
 ```markdown
-# Game Status — Everwood
+# Game Status — Project Name
 
-> Last updated: 2026-07-24 · Milestone: Prototype Stabilization
+## Currently in progress          ← meta (not synced as a card)
+## Planned next                   ← meta
+## Milestone — …                  ← meta (checkboxes still match tasks by title)
+## Validation                     ← meta wrapper
 
-## Currently in progress
-- Sprint / active work with [~] items
+## Save and Load Regression       ← dev-board card (synced — needs **Status:**)
 
-## Playable systems
-- Features that work end-to-end in a fresh save
+# Core Player                     ← Board B system category (not a card)
+## Third-Person Movement          ← feature card (synced)
+**Status:** Playable.
+> 2026-07-24: Session comment syncs to DevelopmentOS.
 
-## Partial / needs work
-- Started but not shippable; explain what is missing
-
-## Planned next
-- Not started; scope only
-
-## Bugs & regressions
-- Known issues discovered during testing
-
-## Session log (optional)
-- Short bullets per work session: what changed, what was verified
+# Appendix                        ← not synced
+## Item reference                 ← appendix tables, not feature cards
 ```
+
+**Souls sync rules for this structure:**
+- Only `## Feature Name` sections with a `**Status:**` line sync comments/checklists to that card.
+- **New `## Feature` sections** without a matching DevelopmentOS card → Souls **creates the card** on push (never duplicates — fuzzy title match across all boards first).
+- **New checklist lines** under a feature → Souls **adds them to the card** (and marks done/partial from `[x]` / `[~]`).
+- **Planned next** checkbox lines (`## Planned next`) → Souls creates **dev board** cards in `Planned` if missing.
+- **New system lists** (unknown `# Category`) → Souls creates the list on the systems board when needed.
+
+Legacy single-file layout (feature `##` sections only, no `#` categories) still works.
 
 ---
 
@@ -279,6 +283,13 @@ DevelopmentOS matches checkbox text to **task titles** and **checklist item titl
 - Renaming features every session without updating the board
 - Vague items like `Fix stuff` or `Misc`
 - One giant checkbox for an entire system with no sub-items
+- **Near-duplicate titles** on the same board (Souls fuzzy-matches similar names to avoid duplicate cards)
+
+Souls deduplicates by:
+1. Exact normalized title match (`Tree Chopping` = `tree chopping`)
+2. Fuzzy match when titles share enough words (e.g. `Crafted Consumable Use Effects` ≈ `Add Use Effects to Crafted Consumables`)
+3. Search across **all boards** before creating a new card
+4. Checklist items use the same fuzzy match before adding a new line
 
 If you add new checklist lines in `GAME_STATUS.md` that do not exist on the card yet, ask Souls (or use DevelopmentOS) to add them with `tasks.checklist.add` so the app and file stay aligned.
 

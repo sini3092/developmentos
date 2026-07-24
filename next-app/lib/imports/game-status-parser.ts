@@ -6,9 +6,11 @@ export type GameStatusCheckbox = {
 
 export type GameStatusSection = {
   title: string
+  category: string | null
   statusLine?: string
   comments: string[]
   checkboxes: GameStatusCheckbox[]
+  syncable: boolean
 }
 
 export type GameStatusDocument = {
@@ -17,11 +19,46 @@ export type GameStatusDocument = {
 }
 
 const CHECKBOX_RE = /^- \[(x|X|~| )\]\s+(.+)$/
-const HEADING_RE = /^#{2,3}\s+(.+)$/
+const FEATURE_HEADING_RE = /^##\s+(.+)$/
+const CATEGORY_HEADING_RE = /^#\s+(.+)$/
 const BLOCKQUOTE_RE = /^>\s+(.+)$/
 const STATUS_RE = /^\*\*status:\*\*\s*(.+)$/i
 const COMMENT_DIRECTIVE_RE = /^!comment\s+(.+)$/i
 const HTML_COMMENT_RE = /^<!--\s*@comment:\s*(.+?)\s*-->$/i
+
+const META_SECTION_PATTERNS = [
+  /^how this file is organized/i,
+  /^how to extend/i,
+  /^checkbox syntax/i,
+  /^currently in progress/i,
+  /^planned next/i,
+  /^milestone\b/i,
+  /^validation$/i,
+  /^item reference/i,
+  /^key files/i,
+  /^design documents/i,
+  /^commit history/i,
+  /^open decisions/i,
+]
+
+const NON_SYNC_CATEGORY_PATTERNS = [/appendix/i, /session log/i, /^game status/i]
+
+const BOARD_SYSTEM_CATEGORIES = new Set(
+  [
+    "Core Player",
+    "World & Environment",
+    "Gathering & Resources",
+    "Inventory & Crafting",
+    "Building & Settlement",
+    "Rekindled & NPCs",
+    "Combat & Progression",
+    "Quests & Narrative",
+    "UI, HUD & Menus",
+    "Audio",
+    "Save, Tools & Technical",
+    "Animals & Farming",
+  ].map((name) => name.toLowerCase())
+)
 
 function parseCheckboxLine(trimmed: string): GameStatusCheckbox | null {
   const match = trimmed.match(CHECKBOX_RE)
@@ -36,11 +73,64 @@ function parseCheckboxLine(trimmed: string): GameStatusCheckbox | null {
   return { text, state, line: trimmed }
 }
 
+function isMetaSectionTitle(title: string) {
+  return META_SECTION_PATTERNS.some((pattern) => pattern.test(title.trim()))
+}
+
+function isNonSyncCategory(category: string | null) {
+  if (!category) {
+    return false
+  }
+  return NON_SYNC_CATEGORY_PATTERNS.some((pattern) => pattern.test(category.trim()))
+}
+
+function isBoardSystemCategory(category: string | null) {
+  if (!category) {
+    return false
+  }
+  return BOARD_SYSTEM_CATEGORIES.has(category.trim().toLowerCase())
+}
+
+export function isGameStatusMetaSection(title: string) {
+  return isMetaSectionTitle(title)
+}
+
+export function isGameStatusSystemCategory(category: string | null) {
+  return isBoardSystemCategory(category)
+}
+
+export function resolveGameStatusSectionSyncable(section: {
+  title: string
+  category: string | null
+  statusLine?: string
+}) {
+  if (!section.statusLine?.trim()) {
+    return false
+  }
+  if (isMetaSectionTitle(section.title)) {
+    return false
+  }
+  if (isNonSyncCategory(section.category)) {
+    return false
+  }
+  return true
+}
+
 export function parseGameStatusCheckboxes(markdown: string): GameStatusCheckbox[] {
   const items: GameStatusCheckbox[] = []
+  let inCodeFence = false
 
   for (const line of markdown.split("\n")) {
-    const checkbox = parseCheckboxLine(line.trim())
+    const trimmed = line.trim()
+    if (trimmed.startsWith("```")) {
+      inCodeFence = !inCodeFence
+      continue
+    }
+    if (inCodeFence) {
+      continue
+    }
+
+    const checkbox = parseCheckboxLine(trimmed)
     if (checkbox) {
       items.push(checkbox)
     }
@@ -53,6 +143,8 @@ export function parseGameStatusDocument(markdown: string): GameStatusDocument {
   const sections: GameStatusSection[] = []
   const orphanCheckboxes: GameStatusCheckbox[] = []
   let current: GameStatusSection | null = null
+  let currentCategory: string | null = null
+  let inCodeFence = false
 
   for (const rawLine of markdown.split("\n")) {
     const trimmed = rawLine.trim()
@@ -60,12 +152,31 @@ export function parseGameStatusDocument(markdown: string): GameStatusDocument {
       continue
     }
 
-    const headingMatch = trimmed.match(HEADING_RE)
+    if (trimmed.startsWith("```")) {
+      inCodeFence = !inCodeFence
+      continue
+    }
+    if (inCodeFence) {
+      continue
+    }
+
+    const categoryMatch = trimmed.match(CATEGORY_HEADING_RE)
+    if (categoryMatch && !trimmed.startsWith("##")) {
+      const name = categoryMatch[1].trim()
+      if (!/^game status/i.test(name)) {
+        currentCategory = name
+      }
+      continue
+    }
+
+    const headingMatch = trimmed.match(FEATURE_HEADING_RE)
     if (headingMatch) {
       current = {
         title: headingMatch[1].trim(),
+        category: currentCategory,
         comments: [],
         checkboxes: [],
+        syncable: false,
       }
       sections.push(current)
       continue
@@ -74,6 +185,7 @@ export function parseGameStatusDocument(markdown: string): GameStatusDocument {
     const statusMatch = trimmed.match(STATUS_RE)
     if (statusMatch && current) {
       current.statusLine = statusMatch[1].trim()
+      current.syncable = resolveGameStatusSectionSyncable(current)
       continue
     }
 
@@ -112,6 +224,17 @@ export function parseGameStatusDocument(markdown: string): GameStatusDocument {
     }
   }
 
+  for (const section of sections) {
+    if (!section.statusLine) {
+      section.syncable = false
+      continue
+    }
+    section.syncable = resolveGameStatusSectionSyncable(section)
+    if (!section.syncable && isBoardSystemCategory(section.category)) {
+      section.syncable = true
+    }
+  }
+
   return { sections, orphanCheckboxes }
 }
 
@@ -140,4 +263,8 @@ export function textsLikelyMatch(left: string, right: string) {
   const bWords = new Set(b.split(" ").filter((word) => word.length > 3))
   const overlap = aWords.filter((word) => bWords.has(word)).length
   return overlap >= Math.min(3, Math.min(aWords.length, bWords.size))
+}
+
+export function getSyncableSections(document: GameStatusDocument) {
+  return document.sections.filter((section) => section.syncable)
 }

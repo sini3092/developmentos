@@ -179,7 +179,7 @@ Important rules:
 - NEVER modify GAME_STATUS.md yourself. The team owns that file in the game repo.
 - You may recommend manual GAME_STATUS edits in recommended_game_status_notes.
 - You may suggest DevelopmentOS task status updates when GAME_STATUS checkboxes clearly imply progress.
-- The server will automatically match [x], [~], and [ ] checkbox lines to tasks and checklist items, move dev-board cards between lists when appropriate, and add blockquote comments from each ## section to the matching card.
+- The server will automatically match [x], [~], and [ ] checkbox lines to tasks and checklist items, move dev-board cards between lists when appropriate, add blockquote comments from each ## section to the matching card, create missing cards/checklist items from GAME_STATUS.md, and create missing board lists when needed.
 - Section headings (## Feature Name) should match DevelopmentOS card titles. Blockquotes (> text) and !comment lines under a section become card comments.
 - Do not duplicate work — only update tasks when the file clearly indicates a status change.
 - If nothing in DevelopmentOS needs updating, set outcome to "no_changes_needed" and explain what you checked.
@@ -214,6 +214,8 @@ Respond with JSON only:
 
   const applied = await applyGameStatusMarkdownUpdates(supabase, {
     projectId: project.id,
+    workspaceId: project.workspace_id,
+    userId: commentAuthorId,
     markdown: file.content,
     commentAuthorId,
     explicitTaskUpdates: plan.task_updates,
@@ -247,7 +249,9 @@ Respond with JSON only:
       commit_sha: input.commitSha,
       outcome: plan.outcome,
       tasks_updated: applied.tasksUpdated,
+      tasks_created: applied.tasksCreated,
       checklist_updates: applied.checklistsUpdated,
+      checklist_items_added: applied.checklistsAdded,
       comments_added: applied.commentsAdded,
       list_moves: applied.listMoves,
       notifications_sent: notifiedCount,
@@ -261,7 +265,9 @@ Respond with JSON only:
     outcome: plan.outcome,
     summary: plan.inbox_body,
     tasksUpdated: applied.tasksUpdated,
+    tasksCreated: applied.tasksCreated,
     checklistsUpdated: applied.checklistsUpdated,
+    checklistsAdded: applied.checklistsAdded,
     commentsAdded: applied.commentsAdded,
     listMoves: applied.listMoves,
     notificationsSent: notifiedCount,
