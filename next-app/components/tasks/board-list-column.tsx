@@ -19,6 +19,10 @@ import {
   type BoardListColor,
 } from "@/lib/constants/board-lists"
 import { KanbanCard } from "@/components/tasks/kanban-card"
+import {
+  DENSE_LIST_THRESHOLD,
+  DenseListPreview,
+} from "@/components/tasks/board-list-summary"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -55,6 +59,7 @@ type BoardListColumnProps = {
   onAddCard: (listId: string) => void
   onListDeleted?: (listId: string) => void
   onListUpdated?: (list: BoardList) => void
+  onOpenListFocus?: (listId: string) => void
 }
 
 export function BoardListColumn({
@@ -69,6 +74,7 @@ export function BoardListColumn({
   onAddCard,
   onListDeleted,
   onListUpdated,
+  onOpenListFocus,
 }: BoardListColumnProps) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: list.id,
@@ -98,6 +104,7 @@ export function BoardListColumn({
   const colorClasses = getBoardListColorClasses(list.color)
   const otherLists = allLists.filter((item) => item.id !== list.id)
   const hasCards = tasks.length > 0
+  const isDense = tasks.length > DENSE_LIST_THRESHOLD && Boolean(onOpenListFocus)
 
   function saveName() {
     const trimmed = name.trim()
@@ -151,7 +158,8 @@ export function BoardListColumn({
           transition,
         }}
         className={cn(
-          "flex min-h-[28rem] flex-col rounded-xl border border-border/60 bg-surface-raised/50",
+          "flex flex-col rounded-xl border border-border/60 bg-surface-raised/50",
+          isDense ? "min-h-0" : "min-h-[28rem]",
           "border-t-[3px]",
           colorClasses.border,
           isOver && "ring-2 ring-primary/20",
@@ -241,25 +249,36 @@ export function BoardListColumn({
 
         <div
           ref={setDropRef}
-          className="flex max-h-[calc(100vh-18rem)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 py-2"
+          className={cn(
+            "flex flex-1 flex-col gap-2 px-2 py-2",
+            isDense ? "min-h-0" : "max-h-[calc(100vh-18rem)] min-h-24 overflow-y-auto"
+          )}
         >
-          <SortableContext
-            items={tasks.map((task) => task.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            {tasks.map((task) => (
-              <KanbanCard
-                key={task.id}
-                task={task}
-                listColor={list.color}
-                onOpen={onOpenTask}
-                onPrefetch={onPrefetchTask}
-                canEdit={canEdit}
-              />
-            ))}
-          </SortableContext>
+          {isDense ? (
+            <DenseListPreview
+              tasks={tasks}
+              onOpenList={() => onOpenListFocus?.(list.id)}
+              onOpenTask={onOpenTask}
+            />
+          ) : (
+            <SortableContext
+              items={tasks.map((task) => task.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {tasks.map((task) => (
+                <KanbanCard
+                  key={task.id}
+                  task={task}
+                  listColor={list.color}
+                  onOpen={onOpenTask}
+                  onPrefetch={onPrefetchTask}
+                  canEdit={canEdit}
+                />
+              ))}
+            </SortableContext>
+          )}
 
-          {tasks.length === 0 ? (
+          {!isDense && tasks.length === 0 ? (
             <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border/50 p-4 text-center text-xs text-muted-foreground">
               Drop cards here
             </div>

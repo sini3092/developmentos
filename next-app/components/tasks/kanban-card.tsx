@@ -16,6 +16,7 @@ type KanbanCardProps = {
   onPrefetch?: (taskId: string) => void
   isDragging?: boolean
   canEdit: boolean
+  variant?: "full" | "compact"
 }
 
 export function KanbanCard({
@@ -25,6 +26,7 @@ export function KanbanCard({
   onPrefetch,
   isDragging = false,
   canEdit,
+  variant = "full",
 }: KanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSorting } =
     useSortable({
@@ -34,8 +36,9 @@ export function KanbanCard({
     })
 
   const colorClasses = getBoardListColorClasses(listColor)
-  const remaining = Math.max(0, Math.min(100, 100 - (task.progress ?? 0)))
-  const showRemaining = task.checklist_total > 0 || task.progress > 0
+  const compact = variant === "compact"
+  const showChecklistPreview = !compact && task.checklist_preview.length > 0
+  const showRemaining = !compact && (task.checklist_total > 0 || task.progress > 0)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -70,9 +73,11 @@ export function KanbanCard({
           className="min-w-0 flex-1 p-2 text-left"
           onClick={() => onOpen(task.id)}
         >
-          <p className="text-sm font-medium leading-snug">{task.title}</p>
+          <p className={cn("font-medium leading-snug", compact ? "text-xs" : "text-sm")}>
+            {task.title}
+          </p>
 
-          {task.checklist_preview.length > 0 ? (
+          {showChecklistPreview ? (
             <ul className="mt-2.5 space-y-1">
               {task.checklist_preview.map((item) => (
                 <li key={item.id} className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -96,17 +101,22 @@ export function KanbanCard({
             <div className="mt-2.5 space-y-1">
               <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                 <span>Remaining</span>
-                <span className="font-medium text-foreground">{remaining}%</span>
+                <span className="font-medium text-foreground">
+                  {Math.max(0, Math.min(100, 100 - (task.progress ?? 0)))}%
+                </span>
               </div>
               <div className="h-1 overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-primary/80"
-                  style={{ width: `${remaining}%` }}
+                  style={{
+                    width: `${Math.max(0, Math.min(100, 100 - (task.progress ?? 0)))}%`,
+                  }}
                 />
               </div>
             </div>
           ) : null}
 
+          {!compact ? (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             {task.description ? (
               <span className="inline-flex items-center gap-1">
@@ -139,6 +149,7 @@ export function KanbanCard({
               </span>
             ) : null}
           </div>
+          ) : null}
         </button>
       </div>
     </div>

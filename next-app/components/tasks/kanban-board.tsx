@@ -20,6 +20,8 @@ import type { TaskListFilters, TaskWithPeople } from "@/lib/auth/task-context"
 import type { BoardList, Label, Milestone, ProjectMemberWithProfile } from "@/lib/database.types"
 import { AddBoardList } from "@/components/tasks/add-board-list"
 import { BoardListColumn } from "@/components/tasks/board-list-column"
+import { BoardListFocusSheet } from "@/components/tasks/board-list-focus-sheet"
+import { BoardListSummaryTile } from "@/components/tasks/board-list-summary"
 import { KanbanCardOverlay } from "@/components/tasks/kanban-card"
 import { TaskFiltersBar } from "@/components/tasks/task-filters-bar"
 import { BOARD_KEY_ORDER, BOARD_KEYS, type BoardKey } from "@/lib/constants/board-keys"
@@ -84,6 +86,7 @@ export function KanbanBoard({
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null)
   const [createListId, setCreateListId] = useState<string | null>(null)
   const [activeBoardKey, setActiveBoardKey] = useState<BoardKey | "all">("dev")
+  const [focusListId, setFocusListId] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -122,6 +125,13 @@ export function KanbanBoard({
     )
     return BOARD_KEY_ORDER.filter((key) => keys.has(key))
   }, [board.lists])
+
+  const isSystemsOverview = activeBoardKey === "systems"
+
+  const focusList = useMemo(
+    () => (focusListId ? board.lists.find((list) => list.id === focusListId) ?? null : null),
+    [board.lists, focusListId]
+  )
 
   const activeTask = useMemo(() => {
     if (activeDrag?.type !== "task") return null
@@ -339,6 +349,17 @@ export function KanbanBoard({
                 </div>
               ) : null}
             </div>
+          ) : isSystemsOverview ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {visibleLists.map((list) => (
+                <BoardListSummaryTile
+                  key={list.id}
+                  list={list}
+                  tasks={board.tasksByList[list.id] ?? []}
+                  onOpenList={() => setFocusListId(list.id)}
+                />
+              ))}
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {visibleLists.map((list) => (
@@ -369,6 +390,7 @@ export function KanbanBoard({
                       board.lists.map((item) => (item.id === updatedList.id ? updatedList : item))
                     )
                   }}
+                  onOpenListFocus={setFocusListId}
                 />
               ))}
               <AddBoardList
@@ -393,6 +415,16 @@ export function KanbanBoard({
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      <BoardListFocusSheet
+        open={focusListId !== null}
+        onOpenChange={(open) => {
+          if (!open) setFocusListId(null)
+        }}
+        list={focusList}
+        tasks={focusList ? board.tasksByList[focusList.id] ?? [] : []}
+        onOpenTask={onOpenTask}
+      />
     </div>
   )
 }
