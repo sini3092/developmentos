@@ -313,6 +313,8 @@ export type Database = {
           github_owner: string | null
           github_repo_name: string | null
           github_webhook_secret: string | null
+          game_status_path: string
+          game_status_sync_enabled: boolean
         }
         Insert: {
           id?: string
@@ -332,6 +334,8 @@ export type Database = {
           github_owner?: string | null
           github_repo_name?: string | null
           github_webhook_secret?: string | null
+          game_status_path?: string
+          game_status_sync_enabled?: boolean
         }
         Update: {
           id?: string
@@ -351,6 +355,8 @@ export type Database = {
           github_owner?: string | null
           github_repo_name?: string | null
           github_webhook_secret?: string | null
+          game_status_path?: string
+          game_status_sync_enabled?: boolean
         }
         Relationships: []
       }
@@ -385,6 +391,7 @@ export type Database = {
           name: string
           color: string
           position: number
+          board_key: string | null
           created_at: string
           updated_at: string
         }
@@ -394,6 +401,7 @@ export type Database = {
           name: string
           color?: string
           position?: number
+          board_key?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -403,6 +411,7 @@ export type Database = {
           name?: string
           color?: string
           position?: number
+          board_key?: string | null
           created_at?: string
           updated_at?: string
         }

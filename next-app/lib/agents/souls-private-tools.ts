@@ -1,5 +1,9 @@
 import { createBoardList } from "@/lib/actions/board-lists"
 import { executeSoulsLoreTool } from "@/lib/agents/souls-lore-tools"
+import type { BoardKey } from "@/lib/constants/board-keys"
+import { importEverwoodBoardPlan, upsertPlanTaskCard } from "@/lib/imports/board-plan-importer"
+import type { PlanTaskCard } from "@/lib/imports/everwood-plan-data"
+import { findTaskByTitle } from "@/lib/imports/task-dedup"
 import type { TaskPriority } from "@/lib/database.types"
 import type { SoulsActionResult } from "@/lib/souls/message-metadata"
 import { formatToolError } from "@/lib/agents/tool-errors"
@@ -211,6 +215,190 @@ export async function executeSoulsPrivateTool(input: {
           status: "success",
           summary: `Created list "${result.list?.name}"`,
           after: result.list ?? undefined,
+        }
+      }
+
+      case "tasks.upsert": {
+        const title = String(input.toolInput.title ?? "").trim()
+        if (!title) {
+          throw new Error("Task title is required.")
+        }
+
+        const boardKey = String(input.toolInput.boardKey ?? "dev") as BoardKey
+        const listName = String(input.toolInput.listName ?? "Inbox")
+        const card: PlanTaskCard = {
+          title,
+          boardKey,
+          listName,
+          priority: (input.toolInput.priority as TaskPriority | undefined) ?? "medium",
+          status:
+            (input.toolInput.status as PlanTaskCard["status"] | undefined) ?? "backlog",
+          milestone: input.toolInput.milestone ? String(input.toolInput.milestone) : undefined,
+          system: input.toolInput.system ? String(input.toolInput.system) : undefined,
+          description: input.toolInput.description ? String(input.toolInput.description) : undefined,
+          acceptanceCriteria: input.toolInput.acceptanceCriteria
+            ? String(input.toolInput.acceptanceCriteria)
+            : undefined,
+          checklist: Array.isArray(input.toolInput.checklist)
+            ? input.toolInput.checklist.map((item) => String(item))
+            : undefined,
+          featureState: input.toolInput.featureState as PlanTaskCard["featureState"],
+        }
+
+        const result = await upsertPlanTaskCard(supabase, {
+          projectId: input.projectId,
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+          card,
+        })
+
+        const { data: task } = await supabase
+          .from("tasks")
+          .select("id, identifier, title")
+          .eq("id", result.taskId)
+          .maybeSingle()
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          href: task ? `/projects/${input.projectSlug}/tasks/board?task=${task.id}` : undefined,
+          summary: result.created
+            ? `Created ${task?.identifier ?? title}`
+            : `Updated ${task?.identifier ?? title}`,
+          after: task ?? { title, taskId: result.taskId },
+        }
+      }
+
+      case "tasks.checklist.add": {
+        const taskId = String(input.toolInput.taskId ?? "")
+        const title = String(input.toolInput.title ?? "").trim()
+        const items = Array.isArray(input.toolInput.items)
+          ? input.toolInput.items.map((item) => String(item).trim()).filter(Boolean)
+          : title
+            ? [title]
+            : []
+
+        if (!taskId || items.length === 0) {
+          throw new Error("taskId and checklist items are required.")
+        }
+
+        const { data: existing } = await supabase
+          .from("task_checklist_items")
+          .select("title, position")
+          .eq("task_id", taskId)
+
+        const existingTitles = new Set(
+          (existing ?? []).map((item) => item.title.trim().toLowerCase())
+        )
+        let position = (existing?.at(-1)?.position ?? -1) + 1
+        let added = 0
+
+        for (const item of items) {
+          if (existingTitles.has(item.toLowerCase())) {
+            continue
+          }
+          const { error } = await supabase.from("task_checklist_items").insert({
+            task_id: taskId,
+            title: item,
+            position,
+          })
+          if (!error) {
+            added += 1
+            position += 1
+            existingTitles.add(item.toLowerCase())
+          }
+        }
+
+        const { data: task } = await supabase
+          .from("tasks")
+          .select("identifier")
+          .eq("id", taskId)
+          .maybeSingle()
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          summary: `Added ${added} checklist item${added === 1 ? "" : "s"} to ${task?.identifier ?? "task"}`,
+          after: { taskId, added },
+        }
+      }
+
+      case "plan.import.everwood": {
+        const result = await importEverwoodBoardPlan({
+          supabase,
+          projectId: input.projectId,
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+        })
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: result.errors.length && result.tasksCreated === 0 ? "error" : "success",
+          summary: `Imported Everwood plan: ${result.tasksCreated} tasks created, ${result.tasksUpdated} updated`,
+          after: result,
+          error:
+            result.errors.length && result.tasksCreated === 0
+              ? result.errors.slice(0, 3).join(" ")
+              : undefined,
+        }
+      }
+
+      case "plan.import.task": {
+        const title = String(input.toolInput.title ?? "").trim()
+        if (!title) {
+          throw new Error("Task title is required.")
+        }
+
+        const existing = await findTaskByTitle(supabase, input.projectId, title, {
+          boardKey: input.toolInput.boardKey
+            ? (String(input.toolInput.boardKey) as BoardKey)
+            : undefined,
+        })
+
+        if (existing) {
+          return {
+            tool: input.tool,
+            label: input.label,
+            status: "success",
+            summary: `Task already exists: ${existing.identifier}`,
+            after: existing,
+          }
+        }
+
+        const card: PlanTaskCard = {
+          title,
+          boardKey: (String(input.toolInput.boardKey ?? "dev") as BoardKey),
+          listName: String(input.toolInput.listName ?? "Inbox"),
+          priority: (input.toolInput.priority as TaskPriority | undefined) ?? "medium",
+          description: input.toolInput.description ? String(input.toolInput.description) : undefined,
+          checklist: Array.isArray(input.toolInput.checklist)
+            ? input.toolInput.checklist.map((item) => String(item))
+            : undefined,
+        }
+
+        const upsert = await upsertPlanTaskCard(supabase, {
+          projectId: input.projectId,
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+          card,
+        })
+
+        const { data: task } = await supabase
+          .from("tasks")
+          .select("id, identifier, title")
+          .eq("id", upsert.taskId)
+          .maybeSingle()
+
+        return {
+          tool: input.tool,
+          label: input.label,
+          status: "success",
+          summary: `Created ${task?.identifier ?? title}`,
+          href: task ? `/projects/${input.projectSlug}/tasks/board?task=${task.id}` : undefined,
+          after: task ?? undefined,
         }
       }
 

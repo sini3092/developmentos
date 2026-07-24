@@ -20,6 +20,9 @@ export type GithubPushPayload = {
       name: string
       username?: string
     }
+    added?: string[]
+    modified?: string[]
+    removed?: string[]
   }>
 }
 

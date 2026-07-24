@@ -8,6 +8,10 @@ import {
   type GithubPullRequestPayload,
   type GithubPushPayload,
 } from "@/lib/github/webhooks"
+import {
+  runSoulsGameStatusSync,
+  shouldRunGameStatusSync,
+} from "@/lib/agents/run-souls-game-status-sync"
 
 type AdminClient = SupabaseClient<Database>
 
@@ -15,6 +19,8 @@ type ProjectRow = {
   id: string
   workspace_id: string
   github_webhook_secret: string | null
+  game_status_path?: string | null
+  game_status_sync_enabled?: boolean | null
 }
 
 export async function findProjectForGithubRepo(
@@ -24,7 +30,7 @@ export async function findProjectForGithubRepo(
 ): Promise<ProjectRow | null> {
   const { data } = await supabase
     .from("projects")
-    .select("id, workspace_id, github_webhook_secret")
+    .select("id, workspace_id, github_webhook_secret, game_status_path, game_status_sync_enabled")
     .eq("github_owner", owner)
     .eq("github_repo_name", name)
     .eq("status", "active")
@@ -154,6 +160,24 @@ export async function processGithubPushEvent(
           ? `${task.identifier}: commit on ${branchName} — ${latestCommit.message.split("\n")[0]}`
           : `${task.identifier}: ${commitCount} commit${commitCount === 1 ? "" : "s"} pushed to ${branchName}`,
     })
+  }
+
+  const statusPath = project.game_status_path ?? "docs/GAME_STATUS.md"
+  if (
+    project.game_status_sync_enabled !== false &&
+    shouldRunGameStatusSync(payload.commits, statusPath)
+  ) {
+    const commitSha = payload.after ?? latestCommit?.id
+    if (commitSha) {
+      void runSoulsGameStatusSync({
+        projectId: project.id,
+        branch: branchName,
+        commitSha,
+        commits: payload.commits,
+      }).catch((error) => {
+        console.error("Souls GAME_STATUS sync failed:", error)
+      })
+    }
   }
 }
 

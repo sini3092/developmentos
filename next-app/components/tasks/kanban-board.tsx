@@ -22,6 +22,7 @@ import { AddBoardList } from "@/components/tasks/add-board-list"
 import { BoardListColumn } from "@/components/tasks/board-list-column"
 import { KanbanCardOverlay } from "@/components/tasks/kanban-card"
 import { TaskFiltersBar } from "@/components/tasks/task-filters-bar"
+import { BOARD_KEY_ORDER, BOARD_KEYS, type BoardKey } from "@/lib/constants/board-keys"
 import {
   applyAllBoardPositions,
   findTaskListId,
@@ -82,6 +83,7 @@ export function KanbanBoard({
   )
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null)
   const [createListId, setCreateListId] = useState<string | null>(null)
+  const [activeBoardKey, setActiveBoardKey] = useState<BoardKey | "all">("dev")
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -104,6 +106,22 @@ export function KanbanBoard({
     () => board.lists.map((list) => listSortableId(list.id)),
     [board.lists]
   )
+
+  const visibleLists = useMemo(() => {
+    if (activeBoardKey === "all") {
+      return board.lists
+    }
+    return board.lists.filter((list) => list.board_key === activeBoardKey)
+  }, [activeBoardKey, board.lists])
+
+  const boardTabs = useMemo(() => {
+    const keys = new Set(
+      board.lists
+        .map((list) => list.board_key)
+        .filter((key): key is BoardKey => Boolean(key && key in BOARD_KEYS))
+    )
+    return BOARD_KEY_ORDER.filter((key) => keys.has(key))
+  }, [board.lists])
 
   const activeTask = useMemo(() => {
     if (activeDrag?.type !== "task") return null
@@ -251,6 +269,36 @@ export function KanbanBoard({
         onTaskCreated={onTaskCreated}
       />
 
+      {boardTabs.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveBoardKey("all")}
+            className={`rounded-full border px-3 py-1 text-xs ${
+              activeBoardKey === "all"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground"
+            }`}
+          >
+            All boards
+          </button>
+          {boardTabs.map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveBoardKey(key)}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                activeBoardKey === key
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground"
+              }`}
+            >
+              {BOARD_KEYS[key]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -263,12 +311,15 @@ export function KanbanBoard({
         }}
       >
         <SortableContext items={listSortableIds} strategy={rectSortingStrategy}>
-          {board.lists.length === 0 ? (
+          {visibleLists.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/80 bg-surface-raised/40 p-10 text-center">
-              <h2 className="text-sm font-medium">Your board is empty</h2>
+              <h2 className="text-sm font-medium">
+                {activeBoardKey === "all" ? "Your board is empty" : "No lists in this board yet"}
+              </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Create your first list — for example Bugs, Roadmap, or Current work — then add cards
-                inside it.
+                {activeBoardKey === "all"
+                  ? "Create your first list — for example Bugs, Roadmap, or Current work — then add cards inside it."
+                  : "Import the Everwood plan or ask Souls to create lists for this board."}
               </p>
               {canEdit ? (
                 <div className="mx-auto mt-6 max-w-sm">
@@ -290,7 +341,7 @@ export function KanbanBoard({
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {board.lists.map((list) => (
+              {visibleLists.map((list) => (
                 <BoardListColumn
                   key={list.id}
                   list={list}

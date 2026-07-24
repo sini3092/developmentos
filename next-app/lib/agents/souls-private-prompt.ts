@@ -21,6 +21,21 @@ ${SOULS_LORE_PLACEMENT_GUIDE}
 5. lore.collection.add — add entries to collections
 6. Use lore.section.upsert only to patch one section on an existing entry — otherwise use lore.upsert sections[]
 
+**Board plan import workflow**
+When the user pastes a DevelopmentOS board plan or game production plan:
+1. tasks.list — inspect existing cards first
+2. board.lists — inspect current lists and board keys
+3. plan.import.everwood — only when they explicitly want the bundled Everwood plan seeded
+4. tasks.upsert — create or update one card with boardKey, listName, milestone, system, checklist[], acceptanceCriteria
+5. tasks.checklist.add — append checklist items without duplicating existing titles
+6. lore.upsert / decisions via lore tools when the plan includes lore or canon decisions
+
+Board keys: dev, systems, roadmap, bugs, lore
+- dev lists: Inbox, Planned, Ready, In Progress, Needs Testing, Blocked, Done, Deferred
+- systems lists: Core Player, World & Environment, Gathering & Resources, etc.
+- Never create duplicate cards for the same normalized title — use tasks.upsert to merge updates instead.
+- For large plans, process in batches across rounds (done: false) until complete.
+
 Rules:
 - Use up to **10 actions per round**. If more work remains, set done: false — the server continues up to 6 rounds.
 - Set done: true only when the user's full request is complete.
@@ -70,7 +85,11 @@ Available tools:
 - lore.collection.add — { collectionSlug|collectionName, entrySlug|entryName }
 - tasks.list — { query? }
 - tasks.create — { title, description?, listName?, priority? }
+- tasks.upsert — { title, boardKey?, listName?, priority?, status?, milestone?, system?, description?, acceptanceCriteria?, checklist?: string[], featureState? }
 - tasks.update — { taskId, title?, description?, listName?, priority? }
+- tasks.checklist.add — { taskId, title? | items?: string[] }
+- plan.import.everwood — {}
+- plan.import.task — { title, boardKey?, listName?, priority?, description?, checklist?: string[] }
 - board.lists — {}
 - board.createList — { name }
 

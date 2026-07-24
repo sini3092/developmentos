@@ -4,6 +4,7 @@ import { ListTodo } from "lucide-react"
 
 import { PageHeader } from "@/components/layout/page-header"
 import { ProjectNav } from "@/components/projects/project-nav"
+import { ImportEverwoodPlanButton } from "@/components/tasks/import-everwood-plan-button"
 import { TaskBoardPageClient } from "@/components/tasks/task-board-page-client"
 import { getProjectBoardLists } from "@/lib/auth/board-context"
 import { getProjectTasks } from "@/lib/auth/task-context"
@@ -35,7 +36,9 @@ export default async function TasksBoardPage({ params, searchParams }: BoardPage
         title="Tasks"
         description={`Task board for ${project.name} · organize work in custom lists`}
         icon={ListTodo}
-      />
+      >
+        <ImportEverwoodPlanButton projectSlug={slug} canEdit={canEdit} />
+      </PageHeader>
 
       <ProjectNav slug={slug} canManage={canManage} />
 
