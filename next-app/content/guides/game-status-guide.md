@@ -366,6 +366,8 @@ Prefer editing `GAME_STATUS.md` yourself during coding sessions. Ask Souls for d
 
 If you manually edit `loredoc.md` in Git, tell Souls to import new facts into DevelopmentOS so both stay aligned.
 
+See also: `next-app/content/guides/loredoc-guide.md` (copy to game repo as `docs/loredoc-guide.md`).
+
 ---
 
 ## What Souls does on Git push
