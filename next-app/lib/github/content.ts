@@ -64,20 +64,47 @@ export async function getGithubFileContent(
     throw new Error(`Could not read ${path} (${response.status}).`)
   }
 
-  const data = (await response.json()) as {
-    content?: string
-    encoding?: string
-    sha?: string
+  const data = (await response.json()) as
+    | {
+        content?: string
+        encoding?: string
+        sha?: string
+        download_url?: string | null
+      }
+    | Array<{ path?: string }>
+
+  if (Array.isArray(data)) {
+    throw new Error(`Could not read ${path} (path is a directory).`)
   }
 
-  if (!data.content || data.encoding !== "base64") {
-    throw new Error(`Could not decode ${path}.`)
+  if (typeof data.content === "string" && data.encoding === "base64") {
+    const normalized = data.content.replace(/\s/g, "")
+    return {
+      content: normalized.length > 0 ? Buffer.from(normalized, "base64").toString("utf8") : "",
+      sha: data.sha ?? null,
+    }
   }
 
-  return {
-    content: Buffer.from(data.content, "base64").toString("utf8"),
-    sha: data.sha ?? null,
+  if (data.encoding === "none" || data.content === "" || data.content == null) {
+    if (data.sha) {
+      return { content: "", sha: data.sha }
+    }
+
+    if (data.download_url) {
+      const downloadResponse = await fetch(data.download_url, {
+        headers: githubHeaders(token),
+        next: { revalidate: 0 },
+      })
+      if (downloadResponse.ok) {
+        return {
+          content: await downloadResponse.text(),
+          sha: data.sha ?? null,
+        }
+      }
+    }
   }
+
+  throw new Error(`Could not decode ${path}.`)
 }
 
 export async function putGithubFileContent(
