@@ -77,11 +77,9 @@ export async function POST(_request: Request, { params }: SyncRouteProps) {
       loreDocCommitted: loreResult.loreDocCommitted ?? false,
       gameStatusPending: true,
       summary: loreResult.summary,
-      message:
-        (loreResult.loreDocCommitted
-          ? "Lore exported to GitHub."
-          : "Loredoc already matched DevelopmentOS.") +
-        " Souls will message you in Inbox when the GAME_STATUS review finishes.",
+      message: loreResult.loreDocCommitted
+        ? "Lore exported to GitHub. Souls will message you in Inbox when the GAME_STATUS review finishes."
+        : "Lore already matched DevelopmentOS. Souls will only message you in Inbox if GAME_STATUS needs updates.",
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Docs sync failed."

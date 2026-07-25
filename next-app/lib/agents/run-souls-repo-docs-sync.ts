@@ -2,6 +2,7 @@ import { z } from "zod"
 
 import { SOULS_REPO_DOCS_SYNC_SYSTEM_PROMPT } from "@/lib/agents/souls-repo-docs-sync-prompt"
 import { commitTouchesDocFile } from "@/lib/github/doc-paths"
+import { pushTouchesOnlySoulsOutboundDocs } from "@/lib/github/souls-commits"
 import {
   getGithubBranchHeadSha,
   getGithubCommitChangedFiles,
@@ -10,7 +11,7 @@ import {
   putGithubFileContent,
 } from "@/lib/github/content"
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
-import { buildLoreDocMarkdown } from "@/lib/lore/export-lore-doc"
+import { buildLoreDocMarkdown, loreDocsAreEquivalent } from "@/lib/lore/export-lore-doc"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import { notifyProjectMembersSoulsDocsSync } from "@/lib/souls/docs-sync-notifications"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
@@ -170,7 +171,7 @@ export async function exportLoreDocToGithub(input: {
   )
 
   let loreDocCommitted = false
-  if (loreMarkdown.trim() !== currentLoreDoc.content.trim()) {
+  if (!loreDocsAreEquivalent(loreMarkdown, currentLoreDoc.content)) {
     await putGithubFileContent(
       token,
       project.github_owner!,
@@ -305,6 +306,10 @@ export async function finalizeDocsSync(input: {
   trigger?: string
   branch?: string
 }) {
+  if (!input.loreDocCommitted && !input.gameStatusCommitted && !input.gameStatusError) {
+    return { notificationsSent: 0 }
+  }
+
   const supabase = createAdminClient()
   const { data: project } = await supabase
     .from("projects")
@@ -409,6 +414,15 @@ export async function shouldRunLoreDocSyncForPush(input: {
   commits: Array<{ message?: string; added?: string[]; modified?: string[]; removed?: string[] }>
   headCommit?: { message?: string; added?: string[]; modified?: string[]; removed?: string[] } | null
 }) {
+  if (
+    pushTouchesOnlySoulsOutboundDocs({
+      commits: input.commits,
+      headCommit: input.headCommit,
+    })
+  ) {
+    return false
+  }
+
   const touched = (commits: typeof input.commits) =>
     commits.some((commit) =>
       commitTouchesDocFile(commit, input.loreDocPath, ["loredoc", "lore doc"])

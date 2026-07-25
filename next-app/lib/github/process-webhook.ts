@@ -17,6 +17,7 @@ import {
   runSoulsRepoDocsSync,
   shouldRunLoreDocSyncForPush,
 } from "@/lib/agents/run-souls-repo-docs-sync"
+import { pushTouchesOnlySoulsOutboundDocs } from "@/lib/github/souls-commits"
 
 type AdminClient = SupabaseClient<Database>
 
@@ -179,7 +180,15 @@ export async function processGithubPushEvent(
 
   const statusPath = project.game_status_path ?? "docs/GAME_STATUS.md"
   const commitSha = payload.after ?? payload.head_commit?.id ?? latestCommit?.id
+  const soulsOutboundOnly = pushTouchesOnlySoulsOutboundDocs({
+    commits: payload.commits ?? [],
+    headCommit: payload.head_commit,
+  })
+
+  let docsSyncRanThisPush = false
+
   if (
+    !soulsOutboundOnly &&
     project.game_status_sync_enabled !== false &&
     commitSha &&
     (await shouldRunGameStatusSyncForPush({
@@ -208,6 +217,7 @@ export async function processGithubPushEvent(
             branch: branchName,
             trigger: "after_game_status_sync",
           })
+          docsSyncRanThisPush = true
         } catch (docsError) {
           console.error("Souls repo docs sync failed:", docsError)
         }
@@ -226,6 +236,8 @@ export async function processGithubPushEvent(
 
   const loreDocPath = project.lore_doc_path ?? "docs/loredoc.md"
   if (
+    !docsSyncRanThisPush &&
+    !soulsOutboundOnly &&
     project.lore_doc_sync_enabled !== false &&
     commitSha &&
     (await shouldRunLoreDocSyncForPush({

@@ -10,6 +10,7 @@ import {
   type GameStatusCommitFiles,
 } from "@/lib/github/game-status-touched"
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
+import { pushTouchesOnlySoulsOutboundDocs } from "@/lib/github/souls-commits"
 import { SOULS_GAME_STATUS_SYNC_SYSTEM_PROMPT } from "@/lib/agents/souls-game-status-sync-prompt"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import { notifyProjectMembersSoulsGameStatus } from "@/lib/souls/game-status-notifications"
@@ -181,6 +182,15 @@ export async function shouldRunGameStatusSyncForPush(input: {
   headCommit?: GameStatusCommitFiles | null
 }) {
   if (!input.commitSha || !input.githubOwner || !input.githubRepoName) {
+    return false
+  }
+
+  if (
+    pushTouchesOnlySoulsOutboundDocs({
+      commits: input.commits,
+      headCommit: input.headCommit,
+    })
+  ) {
     return false
   }
 

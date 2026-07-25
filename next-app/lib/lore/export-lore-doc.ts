@@ -5,7 +5,8 @@ import { getLoreSectionsForEntry } from "@/lib/lore/sections"
 
 type Client = SupabaseClient<Database>
 
-export function loreDocHeader(projectName: string) {
+export function loreDocHeader(projectName: string, syncedAt?: string) {
+  const timestamp = syncedAt ?? new Date().toISOString()
   return [
     `# ${projectName} — Lore Document`,
     "",
@@ -23,11 +24,24 @@ export function loreDocHeader(projectName: string) {
     "",
     "**Before narrative or world-facing changes:** skim relevant sections below. **Before every push:** update `docs/GAME_STATUS.md`, not this file.",
     "",
-    `_Last synced by Souls: ${new Date().toISOString()}_`,
+    `_Last synced by Souls: ${timestamp}_`,
     "",
     "---",
     "",
   ].join("\n")
+}
+
+const LORE_SYNC_TIMESTAMP_PATTERN = /^_Last synced by Souls:.*$/m
+
+export function normalizeLoreDocForCompare(content: string) {
+  return content
+    .replace(/\r\n/g, "\n")
+    .replace(LORE_SYNC_TIMESTAMP_PATTERN, "_Last synced by Souls: …")
+    .trimEnd()
+}
+
+export function loreDocsAreEquivalent(nextContent: string, currentContent: string) {
+  return normalizeLoreDocForCompare(nextContent) === normalizeLoreDocForCompare(currentContent)
 }
 
 export async function buildLoreDocMarkdown(
@@ -63,7 +77,7 @@ export async function buildLoreDocMarkdown(
 
     lines.push(`## ${entry.name}`, "")
     lines.push(
-      `**Type:** ${entry.entry_type} · **Canon:** ${entry.canon_status} · **Slug:** \`${entry.slug}\``
+      `**Type:** ${entry.entry_type} · **Canon:** ${entry.canon_status} · **Slug:** \`${entry.slug}\` · **Updated:** ${entry.updated_at.slice(0, 10)}`
     )
     lines.push("")
 

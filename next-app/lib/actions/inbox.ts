@@ -140,6 +140,43 @@ export async function archiveInboxThreadAction(threadId: string) {
   return { success: true }
 }
 
+export async function archiveSoulsReportThreadsAction(workspaceId: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: "Not authenticated." }
+  }
+
+  const { data: memberships } = await supabase
+    .from("inbox_thread_members")
+    .select("thread_id")
+    .eq("user_id", user.id)
+
+  const threadIds = (memberships ?? []).map((row) => row.thread_id)
+  if (threadIds.length === 0) {
+    return { success: true, archived: 0 }
+  }
+
+  const { data: threads } = await supabase
+    .from("inbox_threads")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("kind", "souls_report")
+    .in("id", threadIds)
+    .is("archived_at", null)
+
+  const soulsThreadIds = (threads ?? []).map((thread) => thread.id)
+  for (const threadId of soulsThreadIds) {
+    await archiveInboxThread(supabase, threadId)
+  }
+
+  revalidateInbox()
+  return { success: true, archived: soulsThreadIds.length }
+}
+
 export async function markInboxThreadReadAction(threadId: string) {
   const supabase = await createClient()
   const {
