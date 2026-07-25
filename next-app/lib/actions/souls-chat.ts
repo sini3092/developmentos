@@ -9,6 +9,7 @@ import {
   getSoulsLoreAttachment,
 } from "@/lib/auth/souls-chat-context"
 import { recoverStaleSoulsMessages } from "@/lib/souls/stale-messages"
+import { resolveBoardInboxTriageContinuation } from "@/lib/tasks/board-inbox"
 import { createClient } from "@/lib/supabase/server"
 import type { Json } from "@/lib/database.types"
 
@@ -60,6 +61,12 @@ export async function sendSoulsPrivateMessage(
     ? await getSoulsLoreAttachment(projectId, attachLoreSlug)
     : null
 
+  const triageContinuation = await resolveBoardInboxTriageContinuation(supabase, {
+    conversationId: conversation.id,
+    projectId,
+    userMessage: body,
+  })
+
   const userMetadata = attachedLore
     ? {
         attachedLore: {
@@ -70,7 +77,9 @@ export async function sendSoulsPrivateMessage(
           contentPreview: attachedLore.content.slice(0, 3000),
         },
       }
-    : {}
+    : triageContinuation
+      ? { source: "board_inbox_triage_continue", inboxCount: triageContinuation.inboxTaskIds.length }
+      : {}
 
   const { data: userMessage, error: userError } = await supabase
     .from("souls_private_messages")
@@ -112,7 +121,10 @@ export async function sendSoulsPrivateMessage(
       projectId,
       projectSlug,
       userId: user.id,
-      userPrompt: body,
+      userPrompt: triageContinuation?.prompt ?? body,
+      agentMode: triageContinuation ? "board_inbox_triage" : undefined,
+      inboxTaskIds: triageContinuation?.inboxTaskIds,
+      inboxListId: triageContinuation?.inboxListId,
       attachedLore: attachedLore
         ? {
             name: attachedLore.name,
@@ -127,6 +139,9 @@ export async function sendSoulsPrivateMessage(
 
   revalidatePath(`/projects/${projectSlug}/lore`)
   revalidatePath(`/projects/${projectSlug}/tasks`)
+  if (triageContinuation) {
+    revalidatePath(`/projects/${projectSlug}/tasks/board`)
+  }
 
   return {
     success: "Sent",

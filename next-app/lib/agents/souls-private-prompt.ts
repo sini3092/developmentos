@@ -173,15 +173,16 @@ Relationship types: related_to, parent_of, member_of, located_in, ally_of, enemy
 
 export const SOULS_BOARD_INBOX_TRIAGE_ADDENDUM = `
 **Board Inbox triage mode (ACTIVE)**
-- The user triggered **Souls triage inbox** on the dev-board Inbox column.
+- The user triggered **Souls triage inbox** on the dev-board Inbox column (or said continue to finish triage).
 - You must process **every** card in the batch — no partial triage.
 - For each card: call **tasks.move** (route it) OR **tasks.comment.add** (only if it must stay in Inbox — explain why).
+- **Forbidden during triage:** lore.*, docs.sync, lore.list, and any lore reading/placement work.
+- Card titles may sound like lore topics — still route them as tasks; do not open lore entries.
 - Listing tasks alone does not count as triage.
 - Use taskId + listId (preferred) or boardKey + listName on every tasks.move.
-- Do not use lore.* tools unless a card is explicitly world-building content to file in lore.
+- Pack up to **15 tasks.move** actions per round until the batch is complete.
 - Set done: false until **zero** cards remain unaddressed (moved out or commented as staying).
 - Your final reply must list every card and its outcome (destination list or reason for staying).
-- Use multiple rounds with up to 10 actions per round until the batch is complete.
 `
 
 export const SOULS_INBOX_THREAD_ADDENDUM = `

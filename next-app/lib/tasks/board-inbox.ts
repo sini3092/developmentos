@@ -97,7 +97,160 @@ export function formatBoardInboxTriageProgressBlock(progress: BoardInboxTriagePr
 }
 
 export function boardInboxTriageMaxRounds(inboxCount: number) {
-  return Math.min(20, Math.max(8, Math.ceil(inboxCount / 4) + 4))
+  return Math.min(30, Math.max(12, Math.ceil(inboxCount * 1.5) + 4))
+}
+
+export function isBoardInboxTriageContinueMessage(message: string) {
+  const normalized = message.trim().toLowerCase()
+  if (!normalized) {
+    return false
+  }
+
+  return /^(continue|fortsett|gå videre|ga videre|kjør videre|kjor videre|fullfør triage|fullfor triage|triage videre|ferdig med inbox|fortsett triage)([.!?\s]|$)/i.test(
+    normalized
+  )
+}
+
+export type DevInboxTriageBatch = {
+  inboxListId: string
+  lists: Array<Pick<BoardList, "id" | "board_key" | "name">>
+  tasks: Array<
+    Pick<
+      TaskWithPeople,
+      "id" | "identifier" | "title" | "progress" | "checklist_done" | "checklist_total" | "status"
+    >
+  >
+}
+
+export async function loadDevInboxTriageBatch(
+  supabase: SupabaseClient<Database>,
+  projectId: string
+): Promise<DevInboxTriageBatch | null> {
+  const { data: lists } = await supabase
+    .from("board_lists")
+    .select("id, name, board_key")
+    .eq("project_id", projectId)
+    .order("position")
+
+  const inboxList = (lists ?? []).find((list) => isBoardInboxList(list))
+  if (!inboxList) {
+    return null
+  }
+
+  const { data: tasks } = await supabase
+    .from("tasks")
+    .select("id, identifier, title, status, progress, list_id")
+    .eq("project_id", projectId)
+    .eq("list_id", inboxList.id)
+    .is("deleted_at", null)
+    .order("board_position")
+
+  if (!tasks?.length) {
+    return null
+  }
+
+  const taskIds = tasks.map((task) => task.id)
+  const { data: checklistItems } = await supabase
+    .from("task_checklist_items")
+    .select("task_id, completed")
+    .in("task_id", taskIds)
+
+  const checklistByTask = new Map<string, { done: number; total: number }>()
+  for (const item of checklistItems ?? []) {
+    const current = checklistByTask.get(item.task_id) ?? { done: 0, total: 0 }
+    current.total += 1
+    if (item.completed) current.done += 1
+    checklistByTask.set(item.task_id, current)
+  }
+
+  const tasksWithChecklist = tasks.map((task) => {
+    const checklist = checklistByTask.get(task.id) ?? { done: 0, total: 0 }
+    return {
+      ...task,
+      checklist_done: checklist.done,
+      checklist_total: checklist.total,
+    }
+  })
+
+  return {
+    inboxListId: inboxList.id,
+    lists: lists ?? [],
+    tasks: tasksWithChecklist,
+  }
+}
+
+export async function conversationHasRecentBoardInboxTriage(
+  supabase: SupabaseClient<Database>,
+  conversationId: string
+) {
+  const { data: messages } = await supabase
+    .from("souls_private_messages")
+    .select("metadata, body")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(40)
+
+  return (messages ?? []).some((message) => {
+    const metadata =
+      message.metadata && typeof message.metadata === "object" && !Array.isArray(message.metadata)
+        ? (message.metadata as Record<string, unknown>)
+        : null
+
+    if (metadata?.source === "board_inbox_triage" || metadata?.source === "board_inbox_triage_continue") {
+      return true
+    }
+
+    const body = typeof message.body === "string" ? message.body : ""
+    return /still unaddressed|finish triage|triage the dev-board \*\*inbox\*\*|souls is triaging your inbox/i.test(
+      body
+    )
+  })
+}
+
+export async function resolveBoardInboxTriageContinuation(
+  supabase: SupabaseClient<Database>,
+  input: {
+    conversationId: string
+    projectId: string
+    userMessage: string
+  }
+) {
+  if (!isBoardInboxTriageContinueMessage(input.userMessage)) {
+    return null
+  }
+
+  const hadTriage = await conversationHasRecentBoardInboxTriage(supabase, input.conversationId)
+  if (!hadTriage) {
+    return null
+  }
+
+  const batch = await loadDevInboxTriageBatch(supabase, input.projectId)
+  if (!batch) {
+    return null
+  }
+
+  return {
+    inboxListId: batch.inboxListId,
+    inboxTaskIds: batch.tasks.map((task) => task.id),
+    prompt: buildBoardInboxTriageContinuePrompt(batch),
+  }
+}
+
+export function buildBoardInboxTriageContinuePrompt(batch: DevInboxTriageBatch) {
+  return [
+    "Continue **board Inbox triage** — finish routing the remaining cards below.",
+    "",
+    "Important:",
+    "- This is still **board Inbox triage**, not lore work.",
+    "- Do NOT use lore.* or docs.sync — only tasks.move and tasks.comment.add.",
+    "- Do NOT re-read lore entries because a card title sounds like lore.",
+    "- Process every remaining card in this message.",
+    "",
+    buildBoardInboxTriagePrompt({
+      tasks: batch.tasks,
+      lists: batch.lists,
+    }),
+  ].join("\n")
 }
 
 export function buildBoardInboxTriagePrompt(input: {
@@ -133,8 +286,11 @@ export function buildBoardInboxTriagePrompt(input: {
     "2. **tasks.comment.add** — only if it must stay in Inbox; explain clearly what is missing or unclear.",
     "",
     "Rules:",
+    "- Do NOT use lore.* or docs.sync during Inbox triage.",
+    "- Prefer tasks.move over tasks.list — route cards directly using the listId values below.",
     "- Listing or analyzing alone is not enough — every card needs tasks.move or tasks.comment.add.",
     "- Use taskId (preferred) or identifier, plus boardKey + listName (or listId) on every tasks.move.",
+    "- Pack as many tasks.move actions as possible per round (up to 15) until the batch is complete.",
     "- dev board: Inbox → Planned / Ready / In Progress / Done / Deferred as appropriate.",
     "- systems board: place feature/system cards in the matching systems list.",
     "- bugs board: real defects only.",

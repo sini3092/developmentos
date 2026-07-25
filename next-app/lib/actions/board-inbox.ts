@@ -7,7 +7,10 @@ import { runSoulsPrivateAgent } from "@/lib/agents/run-souls-private-agent"
 import {
   getOrCreateSoulsConversation,
 } from "@/lib/auth/souls-chat-context"
-import { buildBoardInboxTriagePrompt, isBoardInboxList } from "@/lib/tasks/board-inbox"
+import {
+  buildBoardInboxTriagePrompt,
+  loadDevInboxTriageBatch,
+} from "@/lib/tasks/board-inbox"
 import { recoverStaleSoulsMessages } from "@/lib/souls/stale-messages"
 import { createClient } from "@/lib/supabase/server"
 
@@ -38,55 +41,14 @@ export async function triageDevInboxWithSouls(
     return { error: "You must be signed in." }
   }
 
-  const { data: lists } = await supabase
-    .from("board_lists")
-    .select("id, name, board_key")
-    .eq("project_id", projectId)
-    .order("position")
-
-  const inboxList = (lists ?? []).find((list) => isBoardInboxList(list))
-  if (!inboxList) {
-    return { error: "No dev Inbox list found on this project." }
-  }
-
-  const { data: tasks } = await supabase
-    .from("tasks")
-    .select("id, identifier, title, status, progress, list_id")
-    .eq("project_id", projectId)
-    .eq("list_id", inboxList.id)
-    .is("deleted_at", null)
-    .order("board_position")
-
-  if (!tasks?.length) {
+  const batch = await loadDevInboxTriageBatch(supabase, projectId)
+  if (!batch) {
     return { error: "Inbox is empty — nothing to triage." }
   }
 
-  const taskIds = tasks.map((task) => task.id)
-  const { data: checklistItems } = await supabase
-    .from("task_checklist_items")
-    .select("task_id, completed")
-    .in("task_id", taskIds)
-
-  const checklistByTask = new Map<string, { done: number; total: number }>()
-  for (const item of checklistItems ?? []) {
-    const current = checklistByTask.get(item.task_id) ?? { done: 0, total: 0 }
-    current.total += 1
-    if (item.completed) current.done += 1
-    checklistByTask.set(item.task_id, current)
-  }
-
-  const tasksWithChecklist = tasks.map((task) => {
-    const checklist = checklistByTask.get(task.id) ?? { done: 0, total: 0 }
-    return {
-      ...task,
-      checklist_done: checklist.done,
-      checklist_total: checklist.total,
-    }
-  })
-
   const prompt = buildBoardInboxTriagePrompt({
-    tasks: tasksWithChecklist,
-    lists: lists ?? [],
+    tasks: batch.tasks,
+    lists: batch.lists,
   })
 
   const conversation = await getOrCreateSoulsConversation({
@@ -105,7 +67,7 @@ export async function triageDevInboxWithSouls(
       role: "user",
       body: prompt,
       status: "complete",
-      metadata: { source: "board_inbox_triage", inboxCount: tasks.length },
+      metadata: { source: "board_inbox_triage", inboxCount: batch.tasks.length },
     })
     .select("id")
     .single()
@@ -130,6 +92,8 @@ export async function triageDevInboxWithSouls(
     return { error: assistantError?.message ?? "Could not start Souls triage." }
   }
 
+  const taskIds = batch.tasks.map((task) => task.id)
+
   after(() =>
     runSoulsPrivateAgent({
       conversationId: conversation.id,
@@ -141,7 +105,7 @@ export async function triageDevInboxWithSouls(
       userPrompt: prompt,
       agentMode: "board_inbox_triage",
       inboxTaskIds: taskIds,
-      inboxListId: inboxList.id,
+      inboxListId: batch.inboxListId,
     })
   )
 
