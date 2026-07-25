@@ -12,6 +12,15 @@ import {
   SOULS_PRIVATE_SYSTEM_PROMPT,
 } from "@/lib/agents/souls-private-prompt"
 import { dedupeAgentActions } from "@/lib/agents/souls-lore-dedup"
+import {
+  buildLoreWritePromptBlock,
+  detectLoreWriteIntent,
+  SOULS_LORE_WRITE_ADDENDUM,
+} from "@/lib/agents/souls-lore-write-intent"
+import {
+  formatSoulsLoreActionSummary,
+  parseSoulsAgentResponse,
+} from "@/lib/agents/parse-souls-agent-response"
 import { executeSoulsPrivateTool } from "@/lib/agents/souls-private-tools"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import type { Json } from "@/lib/database.types"
@@ -22,31 +31,6 @@ import {
   formatBoardInboxTriageProgressBlock,
   getBoardInboxTriageProgress,
 } from "@/lib/tasks/board-inbox"
-
-type SoulsAgentResponse = {
-  reply: string
-  done?: boolean
-  actions?: Array<{ tool: string; label: string; input: Record<string, unknown> }>
-}
-
-function parseSoulsAgentResponse(raw: string): SoulsAgentResponse {
-  const trimmed = raw.trim()
-  const jsonMatch = trimmed.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) {
-    return { reply: trimmed, done: true, actions: [] }
-  }
-
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as SoulsAgentResponse
-    return {
-      reply: parsed.reply?.trim() || trimmed,
-      done: parsed.done,
-      actions: parsed.actions ?? [],
-    }
-  } catch {
-    return { reply: trimmed, done: true, actions: [] }
-  }
-}
 
 function summarizeActionResults(results: SoulsActionResult[]) {
   return results
@@ -108,6 +92,10 @@ function countSuccessfulMoves(results: SoulsActionResult[]) {
     .length
 }
 
+function hasSuccessfulLoreAction(results: SoulsActionResult[]) {
+  return results.some((result) => result.tool.startsWith("lore.") && result.status === "success")
+}
+
 function isTriageForbiddenTool(tool: string) {
   return tool.startsWith("lore.") || tool === "docs.sync"
 }
@@ -163,6 +151,7 @@ export async function runSoulsPrivateAgent(input: {
   const isTriage = input.agentMode === "board_inbox_triage"
   const inboxTargetCount = input.inboxTaskIds?.length ?? 0
   const triageMaxRounds = isTriage ? boardInboxTriageMaxRounds(inboxTargetCount) : SOULS_MAX_AGENT_ROUNDS
+  const loreWriteRequested = !isTriage && detectLoreWriteIntent(input.userPrompt)
 
   const immediateSync =
     isTriage
@@ -227,7 +216,9 @@ export async function runSoulsPrivateAgent(input: {
   let idleRounds = 0
   const systemPrompt = isTriage
     ? `${SOULS_PRIVATE_SYSTEM_PROMPT}\n${SOULS_BOARD_INBOX_TRIAGE_ADDENDUM}`
-    : SOULS_PRIVATE_SYSTEM_PROMPT
+    : loreWriteRequested
+      ? `${SOULS_PRIVATE_SYSTEM_PROMPT}\n${SOULS_LORE_WRITE_ADDENDUM}`
+      : SOULS_PRIVATE_SYSTEM_PROMPT
 
   try {
     while (!done && round < triageMaxRounds) {
@@ -281,27 +272,45 @@ export async function runSoulsPrivateAgent(input: {
             : "\nStart with tasks.move for as many cards as possible this round.",
         ].join("\n")
       } else if (round > 1) {
-        continuationBlock = [
-          "",
-          `## Continuation round ${round}/${SOULS_MAX_AGENT_ROUNDS}`,
-          "Actions completed in previous rounds:",
-          summarizeActionResults(allActionResults) || "(none yet)",
-          failures
-            ? `\nFailed actions — fix these before retrying duplicates:\n${failures}`
-            : "",
-          "",
-          "Continue structuring everything from the original request.",
-          "Prefer lore.upsert with sections[] to create entries and content in one step.",
-          "Do not repeat actions that already succeeded.",
-          "Set done: true only when every part of the pasted lore is placed correctly.",
-        ].join("\n")
+        if (loreWriteRequested && !hasSuccessfulLoreAction(allActionResults)) {
+          continuationBlock = [
+            "",
+            `## Continuation round ${round}/${SOULS_MAX_AGENT_ROUNDS}`,
+            buildLoreWritePromptBlock(),
+            "Previous reply did not run any lore tools. Return JSON with lore.upsert actions now.",
+            "Actions completed in previous rounds:",
+            summarizeActionResults(allActionResults) || "(none yet)",
+            failures ? `\nFailed actions:\n${failures}` : "",
+          ].join("\n")
+        } else {
+          continuationBlock = [
+            "",
+            `## Continuation round ${round}/${SOULS_MAX_AGENT_ROUNDS}`,
+            "Actions completed in previous rounds:",
+            summarizeActionResults(allActionResults) || "(none yet)",
+            failures
+              ? `\nFailed actions — fix these before retrying duplicates:\n${failures}`
+              : "",
+            "",
+            "Continue structuring everything from the original request.",
+            "Prefer lore.upsert with sections[] to create entries and content in one step.",
+            "Do not repeat actions that already succeeded.",
+            "Set done: true only when every part of the pasted lore is placed correctly.",
+          ].join("\n")
+        }
       }
+
+      const loreWriteBlock =
+        loreWriteRequested && !hasSuccessfulLoreAction(allActionResults)
+          ? buildLoreWritePromptBlock()
+          : ""
 
       const userContent = [
         projectContext,
         loreContext,
         chatContext,
         basePrompt,
+        loreWriteBlock,
         continuationBlock,
       ]
         .filter(Boolean)
@@ -332,7 +341,10 @@ export async function runSoulsPrivateAgent(input: {
         ],
       })
 
-      const parsed = parseSoulsAgentResponse(raw)
+      const parsed = parseSoulsAgentResponse(raw, {
+        requireToolActions:
+          loreWriteRequested && !hasSuccessfulLoreAction(allActionResults),
+      })
       const roundActions = dedupeAgentActions(parsed.actions ?? [])
       if (parsed.reply) {
         replyParts.push(parsed.reply)
@@ -394,11 +406,12 @@ export async function runSoulsPrivateAgent(input: {
           allActionResults
         )
         done = progress.isComplete || round >= triageMaxRounds
+      } else if (loreWriteRequested && !hasSuccessfulLoreAction(allActionResults)) {
+        done = round >= SOULS_MAX_AGENT_ROUNDS
       } else {
         done =
           parsed.done === true ||
-          (roundActions.length === 0 && !hasFailures) ||
-          idleRounds >= 2
+          (roundActions.length === 0 && !hasFailures && idleRounds >= 2)
       }
     }
 
@@ -431,6 +444,19 @@ export async function runSoulsPrivateAgent(input: {
           cappedReply = `${cappedReply}\n\n(I reviewed the Inbox but did not move or comment on any cards — try triage again.)`
         }
       }
+    }
+
+    if (loreWriteRequested && hasSuccessfulLoreAction(allActionResults)) {
+      const loreSummary = formatSoulsLoreActionSummary(allActionResults)
+      if (loreSummary) {
+        const intro = replyParts[0]?.trim() || "Done."
+        cappedReply = `${intro}\n\nSouls: [Actions taken]\n${loreSummary}`
+      }
+    } else if (
+      loreWriteRequested &&
+      !hasSuccessfulLoreAction(allActionResults)
+    ) {
+      cappedReply = `${cappedReply}\n\n_(No lore was saved — the server did not run any lore tools. Send the text again or say "legg det inn i lore".)_`
     }
 
     await supabase
