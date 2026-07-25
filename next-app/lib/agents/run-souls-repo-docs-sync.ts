@@ -12,6 +12,7 @@ import {
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
 import { buildLoreDocMarkdown } from "@/lib/lore/export-lore-doc"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
+import { notifyProjectMembersSoulsDocsSync } from "@/lib/souls/docs-sync-notifications"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
 
 const docsPlanSchema = z.object({
@@ -20,11 +21,47 @@ const docsPlanSchema = z.object({
   summary: z.string().min(1),
 })
 
+export type DocsSyncResult = {
+  skipped: boolean
+  reason?: string
+  loreDocCommitted?: boolean
+  gameStatusCommitted?: boolean
+  summary?: string
+  notificationsSent?: number
+}
+
 function parseJsonResponse(text: string) {
   const trimmed = text.trim()
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const raw = fenced ? fenced[1].trim() : trimmed
   return JSON.parse(raw) as unknown
+}
+
+async function loadDocsSyncProject(projectId: string) {
+  const supabase = createAdminClient()
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select(
+      "id, workspace_id, slug, name, github_owner, github_repo_name, game_status_path, game_status_sync_enabled, lore_doc_path, lore_doc_sync_enabled"
+    )
+    .eq("id", projectId)
+    .maybeSingle()
+
+  if (!project?.github_owner || !project.github_repo_name) {
+    return { supabase, project: null, reason: "GitHub repo not linked." as const }
+  }
+
+  if (project.lore_doc_sync_enabled === false) {
+    return { supabase, project: null, reason: "Lore doc sync disabled." as const }
+  }
+
+  const token = await getGithubTokenForProjectAdmin(project.id)
+  if (!token) {
+    return { supabase, project: null, reason: "No GitHub token available." as const }
+  }
+
+  return { supabase, project, token }
 }
 
 async function buildDocsGapContext(
@@ -90,49 +127,22 @@ async function buildDocsGapContext(
   ].join("\n")
 }
 
-export async function runSoulsRepoDocsSync(input: {
+export async function exportLoreDocToGithub(input: {
   projectId: string
   branch?: string
   trigger?: string
-}) {
+}): Promise<DocsSyncResult> {
   if (!isAdminClientConfigured()) {
     return { skipped: true, reason: "Admin client not configured." }
   }
 
-  const supabase = createAdminClient()
-
-  const { data: project } = await supabase
-    .from("projects")
-    .select(
-      "id, workspace_id, slug, name, github_owner, github_repo_name, game_status_path, game_status_sync_enabled, lore_doc_path, lore_doc_sync_enabled"
-    )
-    .eq("id", input.projectId)
-    .maybeSingle()
-
-  if (!project?.github_owner || !project.github_repo_name) {
-    return { skipped: true, reason: "GitHub repo not linked." }
+  const loaded = await loadDocsSyncProject(input.projectId)
+  if (!loaded.project || !loaded.token) {
+    return { skipped: true, reason: loaded.reason }
   }
 
-  if (project.lore_doc_sync_enabled === false) {
-    return { skipped: true, reason: "Lore doc sync disabled." }
-  }
-
-  const token = await getGithubTokenForProjectAdmin(project.id)
-  if (!token) {
-    return { skipped: true, reason: "No GitHub token available." }
-  }
-
-  const { data: workspace } = await supabase
-    .from("workspaces")
-    .select("openrouter_api_key, openrouter_model")
-    .eq("id", project.workspace_id)
-    .maybeSingle()
-
-  if (!workspace?.openrouter_api_key) {
-    return { skipped: true, reason: "OpenRouter not configured." }
-  }
-
-  const repoRef = await getGithubRepoRef(token, project.github_owner, project.github_repo_name)
+  const { supabase, project, token } = loaded
+  const repoRef = await getGithubRepoRef(token, project.github_owner!, project.github_repo_name!)
   if (!repoRef) {
     return { skipped: true, reason: "Could not read GitHub repo." }
   }
@@ -140,8 +150,8 @@ export async function runSoulsRepoDocsSync(input: {
   const branch = input.branch ?? repoRef.defaultBranch
   const headSha = await getGithubBranchHeadSha(
     token,
-    project.github_owner,
-    project.github_repo_name,
+    project.github_owner!,
+    project.github_repo_name!,
     branch
   )
 
@@ -150,13 +160,11 @@ export async function runSoulsRepoDocsSync(input: {
   }
 
   const loreDocPath = project.lore_doc_path || "docs/loredoc.md"
-  const statusPath = project.game_status_path || "docs/GAME_STATUS.md"
-
   const loreMarkdown = await buildLoreDocMarkdown(supabase, project.id, project.name)
   const currentLoreDoc = await getGithubFileContent(
     token,
-    project.github_owner,
-    project.github_repo_name,
+    project.github_owner!,
+    project.github_repo_name!,
     loreDocPath,
     headSha
   )
@@ -165,8 +173,8 @@ export async function runSoulsRepoDocsSync(input: {
   if (loreMarkdown.trim() !== currentLoreDoc.content.trim()) {
     await putGithubFileContent(
       token,
-      project.github_owner,
-      project.github_repo_name,
+      project.github_owner!,
+      project.github_repo_name!,
       loreDocPath,
       branch,
       `Souls: sync lore document from DevelopmentOS (${input.trigger ?? "manual"})`,
@@ -176,62 +184,141 @@ export async function runSoulsRepoDocsSync(input: {
     loreDocCommitted = true
   }
 
-  let gameStatusCommitted = false
-  let summary = loreDocCommitted
+  const summary = loreDocCommitted
     ? "Exported DevelopmentOS lore to loredoc.md."
     : "loredoc.md already matched DevelopmentOS lore."
 
-  if (project.game_status_sync_enabled !== false) {
-    const gameStatusFile = await getGithubFileContent(
+  return {
+    skipped: false,
+    loreDocCommitted,
+    summary,
+  }
+}
+
+export async function runGameStatusGapFill(input: {
+  projectId: string
+  branch?: string
+  trigger?: string
+}): Promise<{ committed: boolean; summary: string; error?: string }> {
+  if (!isAdminClientConfigured()) {
+    return { committed: false, summary: "", error: "Admin client not configured." }
+  }
+
+  const loaded = await loadDocsSyncProject(input.projectId)
+  if (!loaded.project || !loaded.token) {
+    return { committed: false, summary: "", error: loaded.reason }
+  }
+
+  const { supabase, project, token } = loaded
+
+  if (project.game_status_sync_enabled === false) {
+    return { committed: false, summary: "GAME_STATUS sync is disabled for this project." }
+  }
+
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("openrouter_api_key, openrouter_model")
+    .eq("id", project.workspace_id)
+    .maybeSingle()
+
+  if (!workspace?.openrouter_api_key) {
+    return { committed: false, summary: "", error: "OpenRouter not configured." }
+  }
+
+  const repoRef = await getGithubRepoRef(token, project.github_owner!, project.github_repo_name!)
+  if (!repoRef) {
+    return { committed: false, summary: "", error: "Could not read GitHub repo." }
+  }
+
+  const branch = input.branch ?? repoRef.defaultBranch
+  const headSha = await getGithubBranchHeadSha(
+    token,
+    project.github_owner!,
+    project.github_repo_name!,
+    branch
+  )
+
+  if (!headSha) {
+    return { committed: false, summary: "", error: "Could not resolve branch head." }
+  }
+
+  const statusPath = project.game_status_path || "docs/GAME_STATUS.md"
+  const gameStatusFile = await getGithubFileContent(
+    token,
+    project.github_owner!,
+    project.github_repo_name!,
+    statusPath,
+    headSha
+  )
+
+  const gapContext = await buildDocsGapContext(supabase, project.id)
+
+  const raw = await chatWithOpenRouter({
+    apiKey: workspace.openrouter_api_key,
+    model: workspace.openrouter_model ?? "google/gemini-2.0-flash-001",
+    temperature: 0.2,
+    maxTokens: 12000,
+    messages: [
+      { role: "system", content: SOULS_REPO_DOCS_SYNC_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: JSON.stringify({
+          trigger: input.trigger ?? "manual",
+          game_status_path: statusPath,
+          current_game_status_markdown: gameStatusFile.content,
+          developmentos_context: gapContext,
+        }),
+      },
+    ],
+  })
+
+  const plan = docsPlanSchema.parse(parseJsonResponse(raw))
+
+  if (
+    plan.game_status_changed &&
+    plan.game_status_markdown?.trim() &&
+    plan.game_status_markdown.trim() !== gameStatusFile.content.trim()
+  ) {
+    await putGithubFileContent(
       token,
-      project.github_owner,
-      project.github_repo_name,
+      project.github_owner!,
+      project.github_repo_name!,
       statusPath,
-      headSha
+      branch,
+      `Souls: update GAME_STATUS from DevelopmentOS (${input.trigger ?? "manual"})`,
+      plan.game_status_markdown.trimEnd() + "\n",
+      gameStatusFile.sha
     )
 
-    const gapContext = await buildDocsGapContext(supabase, project.id)
-
-    const raw = await chatWithOpenRouter({
-      apiKey: workspace.openrouter_api_key,
-      model: workspace.openrouter_model ?? "google/gemini-2.0-flash-001",
-      temperature: 0.2,
-      maxTokens: 12000,
-      messages: [
-        { role: "system", content: SOULS_REPO_DOCS_SYNC_SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: JSON.stringify({
-            trigger: input.trigger ?? "manual",
-            game_status_path: statusPath,
-            current_game_status_markdown: gameStatusFile.content,
-            developmentos_context: gapContext,
-          }),
-        },
-      ],
-    })
-
-    const plan = docsPlanSchema.parse(parseJsonResponse(raw))
-    summary = [summary, plan.summary].filter(Boolean).join(" ")
-
-    if (
-      plan.game_status_changed &&
-      plan.game_status_markdown?.trim() &&
-      plan.game_status_markdown.trim() !== gameStatusFile.content.trim()
-    ) {
-      await putGithubFileContent(
-        token,
-        project.github_owner,
-        project.github_repo_name,
-        statusPath,
-        branch,
-        `Souls: update GAME_STATUS from DevelopmentOS (${input.trigger ?? "manual"})`,
-        plan.game_status_markdown.trimEnd() + "\n",
-        gameStatusFile.sha
-      )
-      gameStatusCommitted = true
-    }
+    return { committed: true, summary: plan.summary }
   }
+
+  return { committed: false, summary: plan.summary }
+}
+
+export async function finalizeDocsSync(input: {
+  projectId: string
+  loreDocCommitted: boolean
+  gameStatusCommitted: boolean
+  summary: string
+  gameStatusError?: string
+  trigger?: string
+  branch?: string
+}) {
+  const supabase = createAdminClient()
+  const { data: project } = await supabase
+    .from("projects")
+    .select(
+      "id, workspace_id, slug, name, lore_doc_path, github_owner, github_repo_name"
+    )
+    .eq("id", input.projectId)
+    .maybeSingle()
+
+  if (!project) {
+    return { notificationsSent: 0 }
+  }
+
+  const loreDocPath = project.lore_doc_path || "docs/loredoc.md"
 
   await supabase.rpc("log_github_activity_event", {
     p_workspace_id: project.workspace_id,
@@ -242,18 +329,76 @@ export async function runSoulsRepoDocsSync(input: {
     p_new_value: {
       trigger: input.trigger ?? "manual",
       lore_doc_path: loreDocPath,
-      lore_doc_committed: loreDocCommitted,
-      game_status_committed: gameStatusCommitted,
-      branch,
+      lore_doc_committed: input.loreDocCommitted,
+      game_status_committed: input.gameStatusCommitted,
+      game_status_error: input.gameStatusError ?? null,
+      branch: input.branch ?? "main",
     },
-    p_message: summary,
+    p_message: input.summary,
   })
+
+  const notificationsSent = await notifyProjectMembersSoulsDocsSync(supabase, {
+    workspaceId: project.workspace_id,
+    projectId: project.id,
+    projectSlug: project.slug,
+    projectName: project.name,
+    loreDocCommitted: input.loreDocCommitted,
+    gameStatusCommitted: input.gameStatusCommitted,
+    summary: input.summary,
+    loreDocPath,
+    gameStatusError: input.gameStatusError,
+    trigger: input.trigger,
+  })
+
+  return { notificationsSent }
+}
+
+export async function runSoulsRepoDocsSync(input: {
+  projectId: string
+  branch?: string
+  trigger?: string
+  skipInboxNotification?: boolean
+}): Promise<DocsSyncResult> {
+  const loreResult = await exportLoreDocToGithub(input)
+  if (loreResult.skipped) {
+    return loreResult
+  }
+
+  let gameStatusCommitted = false
+  let gameStatusSummary = ""
+  let gameStatusError: string | undefined
+
+  try {
+    const gameResult = await runGameStatusGapFill(input)
+    gameStatusCommitted = gameResult.committed
+    gameStatusSummary = gameResult.summary
+    gameStatusError = gameResult.error
+  } catch (error) {
+    gameStatusError = error instanceof Error ? error.message : "GAME_STATUS review failed."
+  }
+
+  const summary = [loreResult.summary, gameStatusSummary].filter(Boolean).join(" ")
+
+  let notificationsSent = 0
+  if (!input.skipInboxNotification) {
+    const finalized = await finalizeDocsSync({
+      projectId: input.projectId,
+      loreDocCommitted: loreResult.loreDocCommitted ?? false,
+      gameStatusCommitted,
+      summary,
+      gameStatusError,
+      trigger: input.trigger,
+      branch: input.branch,
+    })
+    notificationsSent = finalized.notificationsSent
+  }
 
   return {
     skipped: false,
-    loreDocCommitted,
+    loreDocCommitted: loreResult.loreDocCommitted,
     gameStatusCommitted,
     summary,
+    notificationsSent,
   }
 }
 

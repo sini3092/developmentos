@@ -552,10 +552,15 @@ export async function executeSoulsPrivateTool(input: {
           tool: input.tool,
           label: input.label,
           status: "success",
-          summary: result.summary ?? "Docs synced to GitHub.",
+          summary:
+            result.summary ??
+            (result.notificationsSent
+              ? `Docs synced. Inbox notifications sent: ${result.notificationsSent}.`
+              : "Docs synced to GitHub."),
           after: {
             loreDocCommitted: result.loreDocCommitted,
             gameStatusCommitted: result.gameStatusCommitted,
+            notificationsSent: result.notificationsSent,
           },
         }
       }

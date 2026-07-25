@@ -180,25 +180,47 @@ export function GithubWebhookPanel({
                   setDocsError(null)
                   setDocsMessage(null)
                   startDocsSync(async () => {
-                    const response = await fetch(`/api/projects/${slug}/souls/sync-docs`, {
-                      method: "POST",
-                    })
-                    const data = (await response.json()) as {
-                      error?: string
-                      reason?: string
-                      summary?: string
-                      loreDocCommitted?: boolean
-                      gameStatusCommitted?: boolean
+                    try {
+                      const response = await fetch(`/api/projects/${slug}/souls/sync-docs`, {
+                        method: "POST",
+                      })
+                      const raw = await response.text()
+                      let data: {
+                        error?: string
+                        reason?: string
+                        summary?: string
+                        message?: string
+                        loreDocCommitted?: boolean
+                        gameStatusCommitted?: boolean
+                        gameStatusPending?: boolean
+                      }
+                      try {
+                        data = JSON.parse(raw) as typeof data
+                      } catch {
+                        setDocsError(
+                          response.status === 404
+                            ? "Sync endpoint not found — deploy may still be in progress."
+                            : response.status === 504
+                              ? "Sync timed out. Check Inbox — Souls may still have finished the lore export."
+                              : "Unexpected server response. Check Inbox for a Souls message."
+                        )
+                        return
+                      }
+                      if (!response.ok) {
+                        setDocsError(data.error ?? data.reason ?? "Docs sync failed.")
+                        return
+                      }
+                      const parts = [data.message ?? data.summary]
+                      if (data.loreDocCommitted) parts.push("loredoc.md updated in GitHub.")
+                      if (data.gameStatusPending) {
+                        parts.push("Check Inbox for Souls confirmation when GAME_STATUS review finishes.")
+                      }
+                      setDocsMessage(parts.filter(Boolean).join(" "))
+                    } catch {
+                      setDocsError(
+                        "Network error. If lore was exported, Souls will still report in Inbox."
+                      )
                     }
-                    if (!response.ok) {
-                      setDocsError(data.error ?? data.reason ?? "Docs sync failed.")
-                      return
-                    }
-                    const parts = [data.summary]
-                    if (data.loreDocCommitted) parts.push("loredoc.md updated.")
-                    if (data.gameStatusCommitted) parts.push("GAME_STATUS.md updated.")
-                    setDocsMessage(parts.filter(Boolean).join(" "))
-                    router.refresh()
                   })
                 }}
               >
