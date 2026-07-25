@@ -2,7 +2,7 @@ import { z } from "zod"
 
 import { SOULS_REPO_DOCS_SYNC_SYSTEM_PROMPT } from "@/lib/agents/souls-repo-docs-sync-prompt"
 import { commitTouchesDocFile } from "@/lib/github/doc-paths"
-import { pushTouchesOnlySoulsOutboundDocs } from "@/lib/github/souls-commits"
+import { isSoulsOutboundDocsCommit, pushTouchesOnlySoulsOutboundDocs } from "@/lib/github/souls-commits"
 import {
   getGithubBranchHeadSha,
   getGithubCommitChangedFiles,
@@ -13,8 +13,9 @@ import {
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
 import { buildLoreDocMarkdown, loreDocsAreEquivalent } from "@/lib/lore/export-lore-doc"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
-import { notifyProjectMembersSoulsDocsSync } from "@/lib/souls/docs-sync-notifications"
 import { createAdminClient, isAdminClientConfigured } from "@/lib/supabase/admin"
+
+const DOCS_SYNC_COOLDOWN_MS = 90_000
 
 const docsPlanSchema = z.object({
   game_status_changed: z.boolean(),
@@ -128,6 +129,23 @@ async function buildDocsGapContext(
   ].join("\n")
 }
 
+async function recentLoreDocCommit(projectId: string) {
+  const supabase = createAdminClient()
+  const since = new Date(Date.now() - DOCS_SYNC_COOLDOWN_MS).toISOString()
+  const { data } = await supabase
+    .from("activity_events")
+    .select("new_value, created_at")
+    .eq("project_id", projectId)
+    .eq("event_type", "souls.repo_docs_sync")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const value = data?.new_value as { lore_doc_committed?: boolean } | null
+  return value?.lore_doc_committed === true
+}
+
 export async function exportLoreDocToGithub(input: {
   projectId: string
   branch?: string
@@ -171,7 +189,10 @@ export async function exportLoreDocToGithub(input: {
   )
 
   let loreDocCommitted = false
-  if (!loreDocsAreEquivalent(loreMarkdown, currentLoreDoc.content)) {
+  const manualTrigger = input.trigger === "manual" || input.trigger === "souls_private_tool" || input.trigger === "souls_chat_intent"
+  const onCooldown = !manualTrigger && (await recentLoreDocCommit(project.id))
+
+  if (!onCooldown && !loreDocsAreEquivalent(loreMarkdown, currentLoreDoc.content)) {
     await putGithubFileContent(
       token,
       project.github_owner!,
@@ -185,9 +206,11 @@ export async function exportLoreDocToGithub(input: {
     loreDocCommitted = true
   }
 
-  const summary = loreDocCommitted
-    ? "Exported DevelopmentOS lore to loredoc.md."
-    : "loredoc.md already matched DevelopmentOS lore."
+  const summary = onCooldown
+    ? "Lore doc sync skipped — a recent export already ran."
+    : loreDocCommitted
+      ? "Exported DevelopmentOS lore to loredoc.md."
+      : "loredoc.md already matched DevelopmentOS lore."
 
   return {
     skipped: false,
@@ -313,9 +336,7 @@ export async function finalizeDocsSync(input: {
   const supabase = createAdminClient()
   const { data: project } = await supabase
     .from("projects")
-    .select(
-      "id, workspace_id, slug, name, lore_doc_path, github_owner, github_repo_name"
-    )
+    .select("id, workspace_id, slug, name, lore_doc_path")
     .eq("id", input.projectId)
     .maybeSingle()
 
@@ -342,20 +363,7 @@ export async function finalizeDocsSync(input: {
     p_message: input.summary,
   })
 
-  const notificationsSent = await notifyProjectMembersSoulsDocsSync(supabase, {
-    workspaceId: project.workspace_id,
-    projectId: project.id,
-    projectSlug: project.slug,
-    projectName: project.name,
-    loreDocCommitted: input.loreDocCommitted,
-    gameStatusCommitted: input.gameStatusCommitted,
-    summary: input.summary,
-    loreDocPath,
-    gameStatusError: input.gameStatusError,
-    trigger: input.trigger,
-  })
-
-  return { notificationsSent }
+  return { notificationsSent: 0 }
 }
 
 export async function runSoulsRepoDocsSync(input: {
@@ -495,6 +503,10 @@ export async function shouldRunLoreDocSyncForPush(input: {
       headCommit: input.headCommit,
     })
   ) {
+    return false
+  }
+
+  if (isSoulsOutboundDocsCommit(input.headCommit?.message)) {
     return false
   }
 

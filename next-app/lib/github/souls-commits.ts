@@ -32,6 +32,10 @@ export function pushTouchesOnlySoulsOutboundDocs(input: {
   commits: CommitMessage[]
   headCommit?: CommitMessage | null
 }) {
+  if (input.headCommit?.message && isSoulsOutboundDocsCommit(input.headCommit.message)) {
+    return true
+  }
+
   const batch = [...input.commits]
   if (input.headCommit?.message) {
     batch.push(input.headCommit)

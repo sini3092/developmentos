@@ -17,7 +17,7 @@ import {
   runSoulsRepoDocsSync,
   shouldRunLoreDocSyncForPush,
 } from "@/lib/agents/run-souls-repo-docs-sync"
-import { pushTouchesOnlySoulsOutboundDocs } from "@/lib/github/souls-commits"
+import { pushTouchesOnlySoulsOutboundDocs, isSoulsOutboundDocsCommit } from "@/lib/github/souls-commits"
 
 type AdminClient = SupabaseClient<Database>
 
@@ -180,10 +180,11 @@ export async function processGithubPushEvent(
 
   const statusPath = project.game_status_path ?? "docs/GAME_STATUS.md"
   const commitSha = payload.after ?? payload.head_commit?.id ?? latestCommit?.id
-  const soulsOutboundOnly = pushTouchesOnlySoulsOutboundDocs({
-    commits: payload.commits ?? [],
-    headCommit: payload.head_commit,
-  })
+  const soulsOutboundOnly =
+    pushTouchesOnlySoulsOutboundDocs({
+      commits: payload.commits ?? [],
+      headCommit: payload.head_commit,
+    }) || isSoulsOutboundDocsCommit(payload.head_commit?.message)
 
   let docsSyncRanThisPush = false
 
