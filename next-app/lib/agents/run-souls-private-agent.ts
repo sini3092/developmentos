@@ -7,6 +7,7 @@ import { tryImmediateLoreDocSyncFromChat } from "@/lib/agents/souls-lore-doc-syn
 import { buildSoulsLoreContext } from "@/lib/agents/souls-lore-context"
 import {
   SOULS_AGENT_MAX_TOKENS,
+  SOULS_BOARD_INBOX_TRIAGE_ADDENDUM,
   SOULS_MAX_AGENT_ROUNDS,
   SOULS_PRIVATE_SYSTEM_PROMPT,
 } from "@/lib/agents/souls-private-prompt"
@@ -16,6 +17,11 @@ import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import type { Json } from "@/lib/database.types"
 import type { SoulsActionResult } from "@/lib/souls/message-metadata"
 import { createClient } from "@/lib/supabase/server"
+import {
+  boardInboxTriageMaxRounds,
+  formatBoardInboxTriageProgressBlock,
+  getBoardInboxTriageProgress,
+} from "@/lib/tasks/board-inbox"
 
 type SoulsAgentResponse = {
   reply: string
@@ -97,6 +103,11 @@ function revalidateSoulsProjectPaths(projectSlug: string) {
   revalidatePath(`/projects/${projectSlug}/tasks/board`)
 }
 
+function countSuccessfulMoves(results: SoulsActionResult[]) {
+  return results.filter((result) => result.tool === "tasks.move" && result.status === "success")
+    .length
+}
+
 export async function runSoulsPrivateAgent(input: {
   conversationId: string
   assistantMessageId: string
@@ -105,6 +116,9 @@ export async function runSoulsPrivateAgent(input: {
   projectSlug: string
   userId: string
   userPrompt: string
+  agentMode?: "default" | "board_inbox_triage"
+  inboxTaskIds?: string[]
+  inboxListId?: string
   attachedLore?: {
     name: string
     slug: string
@@ -142,10 +156,17 @@ export async function runSoulsPrivateAgent(input: {
     })
     .eq("id", input.assistantMessageId)
 
-  const immediateSync = await tryImmediateLoreDocSyncFromChat({
-    projectId: input.projectId,
-    userPrompt: input.userPrompt,
-  })
+  const isTriage = input.agentMode === "board_inbox_triage"
+  const inboxTargetCount = input.inboxTaskIds?.length ?? 0
+  const triageMaxRounds = isTriage ? boardInboxTriageMaxRounds(inboxTargetCount) : SOULS_MAX_AGENT_ROUNDS
+
+  const immediateSync =
+    isTriage
+      ? null
+      : await tryImmediateLoreDocSyncFromChat({
+          projectId: input.projectId,
+          userPrompt: input.userPrompt,
+        })
 
   if (immediateSync) {
     await supabase
@@ -200,12 +221,24 @@ export async function runSoulsPrivateAgent(input: {
   let round = 0
   let done = false
   let idleRounds = 0
+  const systemPrompt = isTriage
+    ? `${SOULS_PRIVATE_SYSTEM_PROMPT}\n${SOULS_BOARD_INBOX_TRIAGE_ADDENDUM}`
+    : SOULS_PRIVATE_SYSTEM_PROMPT
 
   try {
-    while (!done && round < SOULS_MAX_AGENT_ROUNDS) {
+    while (!done && round < triageMaxRounds) {
       round += 1
 
       const failures = summarizeFailures(allActionResults)
+      const triageProgress =
+        isTriage && input.inboxListId && input.inboxTaskIds?.length
+          ? await getBoardInboxTriageProgress(
+              supabase,
+              input.inboxListId,
+              input.inboxTaskIds,
+              allActionResults
+            )
+          : null
       const [projectContext, loreContext, chatContext] = await Promise.all([
         buildAgentProjectContext(supabase, input.projectId, input.workspaceId),
         buildSoulsLoreContext(input.projectId),
@@ -220,20 +253,37 @@ export async function runSoulsPrivateAgent(input: {
 
       const continuationBlock =
         round > 1
-          ? [
-              "",
-              `## Continuation round ${round}/${SOULS_MAX_AGENT_ROUNDS}`,
-              "Actions completed in previous rounds:",
-              summarizeActionResults(allActionResults) || "(none yet)",
-              failures
-                ? `\nFailed actions — fix these before retrying duplicates:\n${failures}`
-                : "",
-              "",
-              "Continue structuring everything from the original request.",
-              "Prefer lore.upsert with sections[] to create entries and content in one step.",
-              "Do not repeat actions that already succeeded.",
-              "Set done: true only when every part of the pasted lore is placed correctly.",
-            ].join("\n")
+          ? isTriage
+            ? [
+                "",
+                `## Continuation round ${round}/${triageMaxRounds}`,
+                triageProgress ? formatBoardInboxTriageProgressBlock(triageProgress) : "",
+                "Actions completed in previous rounds:",
+                summarizeActionResults(allActionResults) || "(none yet)",
+                failures
+                  ? `\nFailed actions — fix these before retrying duplicates:\n${failures}`
+                  : "",
+                triageProgress && !triageProgress.isComplete
+                  ? "\nDo not set done: true yet — every Inbox card must be moved or have tasks.comment.add explaining why it stays."
+                  : "",
+                "",
+                "Continue until every card is addressed.",
+                "Do not repeat actions that already succeeded.",
+              ].join("\n")
+            : [
+                "",
+                `## Continuation round ${round}/${SOULS_MAX_AGENT_ROUNDS}`,
+                "Actions completed in previous rounds:",
+                summarizeActionResults(allActionResults) || "(none yet)",
+                failures
+                  ? `\nFailed actions — fix these before retrying duplicates:\n${failures}`
+                  : "",
+                "",
+                "Continue structuring everything from the original request.",
+                "Prefer lore.upsert with sections[] to create entries and content in one step.",
+                "Do not repeat actions that already succeeded.",
+                "Set done: true only when every part of the pasted lore is placed correctly.",
+              ].join("\n")
           : ""
 
       const userContent = [
@@ -247,8 +297,13 @@ export async function runSoulsPrivateAgent(input: {
         .join("\n")
 
       await persistSoulsWorkingState(supabase, input.assistantMessageId, {
-        workingLabel:
-          round === 1
+        workingLabel: isTriage
+          ? round === 1
+            ? "Souls is triaging your Inbox…"
+            : triageProgress
+              ? `Souls is routing cards (${triageProgress.movedOut + triageProgress.stayingWithComment}/${triageProgress.total})…`
+              : `Souls is routing cards (round ${round}/${triageMaxRounds})…`
+          : round === 1
             ? "Souls is structuring your lore…"
             : `Souls is continuing (round ${round}/${SOULS_MAX_AGENT_ROUNDS})…`,
         actions: allActionResults,
@@ -261,7 +316,7 @@ export async function runSoulsPrivateAgent(input: {
         maxTokens: SOULS_AGENT_MAX_TOKENS,
         temperature: 0.3,
         messages: [
-          { role: "system", content: SOULS_PRIVATE_SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
         ],
       })
@@ -294,8 +349,11 @@ export async function runSoulsPrivateAgent(input: {
           allActionResults.push(result)
 
           await persistSoulsWorkingState(supabase, input.assistantMessageId, {
-            workingLabel:
-              round === 1
+            workingLabel: isTriage
+              ? triageProgress
+                ? `Souls is routing cards (${triageProgress.movedOut + triageProgress.stayingWithComment}/${triageProgress.total})…`
+                : "Souls is triaging your Inbox…"
+              : round === 1
                 ? "Souls is structuring your lore…"
                 : `Souls is continuing (round ${round}/${SOULS_MAX_AGENT_ROUNDS})…`,
             actions: allActionResults,
@@ -307,10 +365,20 @@ export async function runSoulsPrivateAgent(input: {
       }
 
       const hasFailures = allActionResults.some((result) => result.status === "error")
-      done =
-        parsed.done === true ||
-        (roundActions.length === 0 && !hasFailures) ||
-        idleRounds >= 2
+      if (isTriage && input.inboxListId && input.inboxTaskIds?.length) {
+        const progress = await getBoardInboxTriageProgress(
+          supabase,
+          input.inboxListId,
+          input.inboxTaskIds,
+          allActionResults
+        )
+        done = progress.isComplete || round >= triageMaxRounds
+      } else {
+        done =
+          parsed.done === true ||
+          (roundActions.length === 0 && !hasFailures) ||
+          idleRounds >= 2
+      }
     }
 
     const finalReply =
@@ -318,10 +386,31 @@ export async function runSoulsPrivateAgent(input: {
         ? replyParts.join("\n\n")
         : replyParts[0] ?? "Done."
 
-    const cappedReply =
-      !done && round >= SOULS_MAX_AGENT_ROUNDS
+    let cappedReply =
+      !done && round >= triageMaxRounds
         ? `${finalReply}\n\n(I reached the maximum number of work rounds — send "continue" if anything is still missing.)`
         : finalReply
+
+    if (isTriage && input.inboxListId && inboxTargetCount > 0) {
+      const progress = await getBoardInboxTriageProgress(
+        supabase,
+        input.inboxListId,
+        input.inboxTaskIds ?? [],
+        allActionResults
+      )
+
+      if (!progress.isComplete && progress.unaddressed.length > 0) {
+        const remainingLines = progress.unaddressed
+          .map((task) => `- ${task.identifier} · ${task.title}`)
+          .join("\n")
+        cappedReply = `${cappedReply}\n\n**Still unaddressed (${progress.unaddressed.length}):**\n${remainingLines}\n\nSend "continue" to finish triage.`
+      } else if (progress.isComplete) {
+        const moveCount = countSuccessfulMoves(allActionResults)
+        if (moveCount === 0 && progress.stayingWithComment === 0) {
+          cappedReply = `${cappedReply}\n\n(I reviewed the Inbox but did not move or comment on any cards — try triage again.)`
+        }
+      }
+    }
 
     await supabase
       .from("souls_private_messages")

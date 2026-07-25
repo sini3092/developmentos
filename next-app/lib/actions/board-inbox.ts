@@ -139,6 +139,9 @@ export async function triageDevInboxWithSouls(
       projectSlug,
       userId: user.id,
       userPrompt: prompt,
+      agentMode: "board_inbox_triage",
+      inboxTaskIds: taskIds,
+      inboxListId: inboxList.id,
     })
   )
 
