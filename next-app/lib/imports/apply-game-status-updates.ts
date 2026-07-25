@@ -38,6 +38,7 @@ export type GameStatusApplyResult = {
     title: string
     status?: TaskStatus
     listName?: string
+    systemsListName?: string
     checklistChanges?: number
     commentChanges?: number
     created?: boolean
@@ -275,6 +276,12 @@ export async function applyGameStatusMarkdownUpdates(
       .filter((list) => list.board_key === "dev")
       .map((list) => [list.name, list])
   )
+  const listById = new Map((lists ?? []).map((list) => [list.id, list]))
+
+  function resolveTaskBoardKey(task: TaskRow): BoardKey {
+    const list = task.list_id ? listById.get(task.list_id) : null
+    return (list?.board_key ?? "dev") as BoardKey
+  }
 
   const result: GameStatusApplyResult = {
     tasksUpdated: 0,
@@ -420,26 +427,32 @@ export async function applyGameStatusMarkdownUpdates(
     const patch: Database["public"]["Tables"]["tasks"]["Update"] = {
       updated_at: new Date().toISOString(),
     }
+    const boardKey = resolveTaskBoardKey(task)
+    const currentList = task.list_id ? listById.get(task.list_id) : null
     let listName: string | undefined
-    let changed = false
+    let statusChanged = false
+    let listChanged = false
 
     if (nextStatus !== task.status) {
       patch.status = nextStatus
-      changed = true
+      statusChanged = true
     }
 
-    const targetListName = resolveListForStatus("dev", nextStatus)
-    if (targetListName) {
+    const targetListName = resolveListForStatus(boardKey, nextStatus)
+    if (targetListName && boardKey === "dev" && targetListName !== "Inbox") {
       const targetList = devListByName.get(targetListName)
-      if (targetList && task.list_id !== targetList.id) {
+      const shouldMoveList =
+        statusChanged ||
+        (nextStatus !== "backlog" && currentList?.name !== targetListName)
+      if (shouldMoveList && targetList && task.list_id !== targetList.id) {
         patch.list_id = targetList.id
         listName = targetListName
+        listChanged = true
         result.listMoves += 1
-        changed = true
       }
     }
 
-    if (changed) {
+    if (statusChanged || listChanged) {
       await supabase.from("tasks").update(patch).eq("id", task.id)
       result.tasksUpdated += 1
     }
@@ -464,12 +477,19 @@ export async function applyGameStatusMarkdownUpdates(
       }
     }
 
-    if (changed || checklist.checklistUpdated > 0 || checklist.checklistAdded > 0 || commentChanges > 0) {
+    if (
+      statusChanged ||
+      listChanged ||
+      checklist.checklistUpdated > 0 ||
+      checklist.checklistAdded > 0 ||
+      commentChanges > 0
+    ) {
       result.applied.push({
         identifier: task.identifier,
         title: task.title,
-        status: patch.status,
+        status: statusChanged ? nextStatus : undefined,
         listName,
+        systemsListName: boardKey === "systems" ? currentList?.name : undefined,
         checklistChanges: checklist.checklistUpdated + checklist.checklistAdded,
         commentChanges,
         note,
@@ -478,45 +498,13 @@ export async function applyGameStatusMarkdownUpdates(
   }
 
   for (const section of getSyncableSections(document)) {
-    const task =
-      (await resolveExistingTask(
-        section.title,
-        isGameStatusSystemCategory(section.category) ? "systems" : "dev"
-      )) ?? taskRows.find((row) => textsLikelyMatch(section.title, row.title))
+    const boardKey = isGameStatusSystemCategory(section.category) ? "systems" : "dev"
+    const task = await resolveExistingTask(section.title, boardKey)
     if (!task) {
       continue
     }
 
     await applySnapshot(task, section.checkboxes, section.comments)
-  }
-
-  for (const task of taskRows) {
-    if (handledTaskIds.has(task.id)) {
-      continue
-    }
-
-    const related = document.orphanCheckboxes.filter((item) => textsLikelyMatch(item.text, task.title))
-    if (related.length === 0) {
-      continue
-    }
-
-    await applySnapshot(task, related, [])
-  }
-
-  for (const task of taskRows) {
-    if (handledTaskIds.has(task.id)) {
-      continue
-    }
-
-    const related = document.sections
-      .flatMap((section) => section.checkboxes)
-      .filter((item) => textsLikelyMatch(item.text, task.title))
-
-    if (related.length === 0) {
-      continue
-    }
-
-    await applySnapshot(task, related, [])
   }
 
   for (const update of input.explicitTaskUpdates ?? []) {
@@ -532,9 +520,10 @@ export async function applyGameStatusMarkdownUpdates(
       updated_at: new Date().toISOString(),
     }
 
-    const targetListName = resolveListForStatus("dev", update.status)
+    const boardKey = resolveTaskBoardKey(task)
+    const targetListName = resolveListForStatus(boardKey, update.status)
     let listName: string | undefined
-    if (targetListName) {
+    if (targetListName && boardKey === "dev" && targetListName !== "Inbox") {
       const targetList = devListByName.get(targetListName)
       if (targetList && task.list_id !== targetList.id) {
         patch.list_id = targetList.id

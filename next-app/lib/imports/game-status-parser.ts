@@ -259,10 +259,24 @@ export function textsLikelyMatch(left: string, right: string) {
     return true
   }
 
-  const aWords = a.split(" ").filter((word) => word.length > 3)
-  const bWords = new Set(b.split(" ").filter((word) => word.length > 3))
+  const aWords = a.split(" ").filter((word) => word.length > 2)
+  const bWords = new Set(b.split(" ").filter((word) => word.length > 2))
+  if (aWords.length === 0 || bWords.size === 0) {
+    return false
+  }
+
   const overlap = aWords.filter((word) => bWords.has(word)).length
-  return overlap >= Math.min(3, Math.min(aWords.length, bWords.size))
+  if (overlap === 0) {
+    return false
+  }
+
+  // Avoid matching a short generic title ("Inventory") to every checkbox mentioning inventory.
+  const threshold = Math.min(2, Math.min(aWords.length, bWords.size))
+  if (threshold < 2) {
+    return false
+  }
+
+  return overlap >= threshold
 }
 
 export function getSyncableSections(document: GameStatusDocument) {

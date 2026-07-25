@@ -101,6 +101,16 @@ export function resolveStatusFromList(
   return "backlog"
 }
 
+const DEV_STATUS_TO_LIST: Partial<Record<TaskStatus, string>> = {
+  backlog: "Planned",
+  ready: "Ready",
+  in_progress: "In Progress",
+  in_review: "Needs Testing",
+  blocked: "Blocked",
+  done: "Done",
+  cancelled: "Deferred",
+}
+
 export function resolveListForStatus(
   boardKey: BoardKey,
   status: TaskStatus
@@ -109,8 +119,7 @@ export function resolveListForStatus(
     return null
   }
 
-  const entry = Object.entries(DEV_LIST_STATUS).find(([, value]) => value === status)
-  return entry?.[0] ?? null
+  return DEV_STATUS_TO_LIST[status] ?? null
 }
 
 export const DONE_SYSTEM_CHECKLIST = [

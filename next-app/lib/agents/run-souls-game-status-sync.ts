@@ -66,6 +66,9 @@ function buildInboxBody(
         `- ${update.identifier} · ${update.title}`,
         update.status ? `status → ${update.status.replace(/_/g, " ")}` : null,
         update.listName ? `moved to ${update.listName}` : null,
+        update.systemsListName && !update.listName
+          ? `stays on systems · ${update.systemsListName}`
+          : null,
         update.checklistChanges
           ? `${update.checklistChanges} checklist item${update.checklistChanges === 1 ? "" : "s"} updated`
           : null,
