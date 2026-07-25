@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache"
 import { buildAgentProjectContext } from "@/lib/agents/build-project-context"
 import { dedupeAgentActions } from "@/lib/agents/souls-lore-dedup"
 import { buildSoulsLoreContext } from "@/lib/agents/souls-lore-context"
+import { buildLoreDocSyncIntentHint } from "@/lib/agents/souls-lore-doc-sync-intent"
+import { tryImmediateLoreDocSyncFromChat } from "@/lib/agents/souls-lore-doc-sync-chat"
 import {
   SOULS_AGENT_MAX_TOKENS,
   SOULS_INBOX_THREAD_ADDENDUM,
@@ -138,6 +140,34 @@ export async function runInboxSoulsAgent(input: {
 
   const model = workspace.openrouter_model ?? "google/gemini-2.0-flash-001"
 
+  const immediateSync = await tryImmediateLoreDocSyncFromChat({
+    projectId: input.projectId,
+    userPrompt: input.userPrompt,
+  })
+
+  if (immediateSync) {
+    await supabase
+      .from("inbox_messages")
+      .update({
+        body: immediateSync.reply,
+        status: "complete",
+        metadata: {
+          actions: [
+            {
+              tool: "docs.sync",
+              label: "Sync lore to loredoc.md",
+              status: immediateSync.result.skipped ? "error" : "success",
+              summary: immediateSync.result.summary,
+            },
+          ],
+        },
+      })
+      .eq("id", input.assistantMessageId)
+
+    revalidateSoulsProjectPaths(input.projectSlug)
+    return
+  }
+
   const { data: history } = await supabase
     .from("inbox_messages")
     .select("sender_kind, body, created_at")
@@ -163,6 +193,7 @@ export async function runInboxSoulsAgent(input: {
     .join("\n")
 
   const basePrompt = [
+    buildLoreDocSyncIntentHint(input.userPrompt),
     reportBlock,
     "",
     "## Thread history",
@@ -170,7 +201,9 @@ export async function runInboxSoulsAgent(input: {
     "",
     "## Latest user message",
     input.userPrompt,
-  ].join("\n")
+  ]
+    .filter(Boolean)
+    .join("\n")
 
   const systemPrompt = `${SOULS_PRIVATE_SYSTEM_PROMPT}\n${SOULS_INBOX_THREAD_ADDENDUM}`
   const allActionResults: SoulsActionResult[] = []

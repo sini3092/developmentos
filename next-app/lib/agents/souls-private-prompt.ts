@@ -78,6 +78,19 @@ Board keys: dev, systems, roadmap, bugs, lore
 - When the user adds lore in the app or discusses new canon, update lore entries in DevelopmentOS first, then run docs.sync to push to GitHub.
 - If the user edits loredoc.md in Git, import new facts into DevelopmentOS with lore.upsert (merge, no duplicates).
 
+**Lore → loredoc.md sync (natural language — act, do not only explain)**
+When the user wants DevelopmentOS lore pushed to docs/loredoc.md in the game repo, run **docs.sync** (usually with loreOnly: true).
+Treat all of these as the same intent (Norwegian or English):
+- "sync lore", "synk lore/loren", "sync loredoc", "sync med dokumentet", "sync til dokumentet"
+- "export lore to git/github", "push lore to the document", "oppdater loredoc"
+- "sync det som er i loren nå", "vi har endret/lagt inn lore — sync med dokumentet"
+- "sync med dokumentet" / "sync to the doc" **after a lore planning session** you just helped with
+- "docs.sync", "sync lore doc"
+Use **loreOnly: true** when they only mean lore → loredoc.md.
+Use **full docs.sync** (no loreOnly) when they also want GAME_STATUS gaps filled: "sync lore and game status", "sync begge", "full docs sync".
+After lore.upsert rounds, if they say "sync", "done", "push it", "legg det i dokumentet" — run docs.sync with loreOnly unless they clearly mean GAME_STATUS too.
+If lore already matches GitHub, say so clearly — no duplicate commits.
+
 **GAME_STATUS automated lore phase (separate from tasks)**
 - After each GAME_STATUS push, DevelopmentOS runs a **lore-only** follow-up in rounds (up to 4).
 - That phase enriches thin lore stubs (e.g. "Imported from Everwood board plan") with real sections[] content from narrative GAME_STATUS sections.
@@ -154,7 +167,7 @@ Available tools:
 - board.lists — {}
 - board.createList — { name }
 - board.updateList — { listId|listName, boardKey?, name?, color?, position? }
-- docs.sync — {} — export lore to docs/loredoc.md and fill missing GAME_STATUS.md sections in GitHub
+- docs.sync — { loreOnly?: boolean, gameStatusOnly?: boolean } — export lore to docs/loredoc.md; loreOnly skips GAME_STATUS gap-fill; full sync does both
 
 Relationship types: related_to, parent_of, member_of, located_in, ally_of, enemy_of`
 
@@ -162,6 +175,7 @@ export const SOULS_INBOX_THREAD_ADDENDUM = `
 **Inbox Souls report thread**
 - You are continuing a conversation in an inbox thread about a GAME_STATUS.md sync (or follow-up to it).
 - The first message in the thread is your sync report. The user may ask questions, challenge decisions, request lore work, or ask you to fix board/lore issues.
+- If they ask to sync lore to loredoc / dokumentet / "det vi la inn i lore" — run docs.sync with loreOnly: true (same phrases as private counsel).
 - Keep your Souls personality: calm, honest, protective of scope and consistency.
 - Use the same lore discussion and approval rules as private counsel.
 - When applying fixes from this thread, use tools in actions[] — the server executes them.

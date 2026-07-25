@@ -2,6 +2,8 @@ import { revalidatePath } from "next/cache"
 
 import { buildAgentProjectContext } from "@/lib/agents/build-project-context"
 import { buildSoulsPrivateChatContext } from "@/lib/agents/souls-chat-memory"
+import { buildLoreDocSyncIntentHint } from "@/lib/agents/souls-lore-doc-sync-intent"
+import { tryImmediateLoreDocSyncFromChat } from "@/lib/agents/souls-lore-doc-sync-chat"
 import { buildSoulsLoreContext } from "@/lib/agents/souls-lore-context"
 import {
   SOULS_AGENT_MAX_TOKENS,
@@ -140,6 +142,36 @@ export async function runSoulsPrivateAgent(input: {
     })
     .eq("id", input.assistantMessageId)
 
+  const immediateSync = await tryImmediateLoreDocSyncFromChat({
+    projectId: input.projectId,
+    userPrompt: input.userPrompt,
+  })
+
+  if (immediateSync) {
+    await supabase
+      .from("souls_private_messages")
+      .update({
+        body: immediateSync.reply,
+        status: "complete",
+        metadata: {
+          actions: [
+            {
+              tool: "docs.sync",
+              label: "Sync lore to loredoc.md",
+              status: immediateSync.result.skipped ? "error" : "success",
+              summary: immediateSync.result.summary,
+            },
+          ],
+          loreDocSyncIntent: immediateSync.intent.reason,
+        },
+      })
+      .eq("id", input.assistantMessageId)
+
+    revalidateSoulsProjectPaths(input.projectSlug)
+    revalidatePath(`/projects/${input.projectSlug}/souls`)
+    return
+  }
+
   const attachedBlock = input.attachedLore
     ? [
         "",
@@ -155,6 +187,7 @@ export async function runSoulsPrivateAgent(input: {
     : ""
 
   const basePrompt = [
+    buildLoreDocSyncIntentHint(input.userPrompt),
     "## Original user request",
     input.userPrompt,
     attachedBlock,

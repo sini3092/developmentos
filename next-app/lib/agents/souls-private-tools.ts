@@ -1,6 +1,6 @@
 import { createBoardList } from "@/lib/actions/board-lists"
 import { executeSoulsLoreTool } from "@/lib/agents/souls-lore-tools"
-import { runSoulsRepoDocsSync } from "@/lib/agents/run-souls-repo-docs-sync"
+import { runSoulsDocsSyncForAgent } from "@/lib/agents/run-souls-repo-docs-sync"
 import type { BoardKey } from "@/lib/constants/board-keys"
 import { importEverwoodBoardPlan, upsertPlanTaskCard } from "@/lib/imports/board-plan-importer"
 import type { PlanTaskCard } from "@/lib/imports/everwood-plan-data"
@@ -539,9 +539,14 @@ export async function executeSoulsPrivateTool(input: {
       }
 
       case "docs.sync": {
-        const result = await runSoulsRepoDocsSync({
+        const loreOnly = input.toolInput.loreOnly === true
+        const gameStatusOnly = input.toolInput.gameStatusOnly === true
+
+        const result = await runSoulsDocsSyncForAgent({
           projectId: input.projectId,
           trigger: "souls_private_tool",
+          loreOnly: loreOnly && !gameStatusOnly,
+          gameStatusOnly: gameStatusOnly && !loreOnly,
         })
 
         if (result.skipped) {

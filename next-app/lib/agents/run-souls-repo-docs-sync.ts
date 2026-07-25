@@ -407,6 +407,81 @@ export async function runSoulsRepoDocsSync(input: {
   }
 }
 
+export async function runSoulsDocsSyncForAgent(input: {
+  projectId: string
+  branch?: string
+  trigger?: string
+  loreOnly?: boolean
+  gameStatusOnly?: boolean
+}): Promise<DocsSyncResult> {
+  if (input.gameStatusOnly) {
+    let gameStatusCommitted = false
+    let gameStatusSummary = ""
+    let gameStatusError: string | undefined
+
+    try {
+      const gameResult = await runGameStatusGapFill(input)
+      gameStatusCommitted = gameResult.committed
+      gameStatusSummary = gameResult.summary
+      gameStatusError = gameResult.error
+    } catch (error) {
+      gameStatusError = error instanceof Error ? error.message : "GAME_STATUS review failed."
+    }
+
+    let notificationsSent = 0
+    if (gameStatusCommitted || gameStatusError) {
+      const finalized = await finalizeDocsSync({
+        projectId: input.projectId,
+        loreDocCommitted: false,
+        gameStatusCommitted,
+        summary: gameStatusSummary || "GAME_STATUS review complete.",
+        gameStatusError,
+        trigger: input.trigger,
+        branch: input.branch,
+      })
+      notificationsSent = finalized.notificationsSent
+    }
+
+    return {
+      skipped: false,
+      loreDocCommitted: false,
+      gameStatusCommitted,
+      summary: gameStatusSummary || "GAME_STATUS.md did not need changes.",
+      notificationsSent,
+    }
+  }
+
+  if (input.loreOnly) {
+    const loreResult = await exportLoreDocToGithub(input)
+    if (loreResult.skipped) {
+      return loreResult
+    }
+
+    let notificationsSent = 0
+    if (loreResult.loreDocCommitted) {
+      const finalized = await finalizeDocsSync({
+        projectId: input.projectId,
+        loreDocCommitted: true,
+        gameStatusCommitted: false,
+        summary: loreResult.summary ?? "Lore exported to loredoc.md.",
+        trigger: input.trigger,
+        branch: input.branch,
+      })
+      notificationsSent = finalized.notificationsSent
+    }
+
+    return {
+      skipped: false,
+      loreDocCommitted: loreResult.loreDocCommitted,
+      gameStatusCommitted: false,
+      summary: loreResult.summary,
+      notificationsSent,
+    }
+  }
+
+  return runSoulsRepoDocsSync(input)
+}
+
 export async function shouldRunLoreDocSyncForPush(input: {
   projectId: string
   loreDocPath: string
