@@ -112,31 +112,34 @@ export async function POST(request: Request) {
 
   const isNewDelivery = await recordWebhookDelivery(supabase, deliveryId, project.id, eventType)
 
-  const runProcessing = async () => {
-    try {
-      if (eventType === "push") {
-        await processGithubPushEvent(supabase, project, payload as GithubPushPayload, {
-          logPushActivity: isNewDelivery,
-        })
-      } else if (eventType === "pull_request") {
-        await processGithubPullRequestEvent(
-          supabase,
-          project,
-          payload as GithubPullRequestPayload
-        )
-      }
-    } catch (error) {
-      console.error("GitHub webhook processing failed:", error)
-    }
-  }
-
   if (eventType === "push" || eventType === "pull_request") {
-    after(runProcessing)
-    return NextResponse.json({
-      ok: true,
-      queued: true,
-      redelivery: !isNewDelivery,
+    if (!isNewDelivery) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        duplicate: true,
+      })
+    }
+
+    after(async () => {
+      try {
+        if (eventType === "push") {
+          await processGithubPushEvent(supabase, project, payload as GithubPushPayload, {
+            logPushActivity: true,
+          })
+        } else {
+          await processGithubPullRequestEvent(
+            supabase,
+            project,
+            payload as GithubPullRequestPayload
+          )
+        }
+      } catch (error) {
+        console.error("GitHub webhook processing failed:", error)
+      }
     })
+
+    return NextResponse.json({ ok: true, queued: true })
   }
 
   return NextResponse.json({ ok: true })

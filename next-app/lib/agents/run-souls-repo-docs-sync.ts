@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 import { SOULS_REPO_DOCS_SYNC_SYSTEM_PROMPT } from "@/lib/agents/souls-repo-docs-sync-prompt"
+import { allowsGameStatusGapFill, recentOpenRouterSoulRun } from "@/lib/agents/souls-sync-guards"
 import { commitTouchesDocFile } from "@/lib/github/doc-paths"
 import { isSoulsOutboundDocsCommit, pushTouchesOnlySoulsOutboundDocs } from "@/lib/github/souls-commits"
 import {
@@ -224,6 +225,24 @@ export async function runGameStatusGapFill(input: {
   branch?: string
   trigger?: string
 }): Promise<{ committed: boolean; summary: string; error?: string }> {
+  if (!allowsGameStatusGapFill(input.trigger)) {
+    return { committed: false, summary: "" }
+  }
+
+  if (
+    await recentOpenRouterSoulRun({
+      projectId: input.projectId,
+      eventType: "souls.game_status_gap_fill",
+      withinMs: 300_000,
+    })
+  ) {
+    return {
+      committed: false,
+      summary: "",
+      error: "GAME_STATUS AI review ran recently. Wait a few minutes before running again.",
+    }
+  }
+
   if (!isAdminClientConfigured()) {
     return { committed: false, summary: "", error: "Admin client not configured." }
   }
@@ -297,6 +316,20 @@ export async function runGameStatusGapFill(input: {
   })
 
   const plan = docsPlanSchema.parse(parseJsonResponse(raw))
+
+  await supabase.rpc("log_github_activity_event", {
+    p_workspace_id: project.workspace_id,
+    p_project_id: project.id,
+    p_event_type: "souls.game_status_gap_fill",
+    p_entity_type: "project",
+    p_entity_id: project.id,
+    p_new_value: {
+      trigger: input.trigger ?? "manual",
+      game_status_changed: plan.game_status_changed,
+      branch,
+    },
+    p_message: plan.summary,
+  })
 
   if (
     plan.game_status_changed &&
@@ -381,13 +414,15 @@ export async function runSoulsRepoDocsSync(input: {
   let gameStatusSummary = ""
   let gameStatusError: string | undefined
 
-  try {
-    const gameResult = await runGameStatusGapFill(input)
-    gameStatusCommitted = gameResult.committed
-    gameStatusSummary = gameResult.summary
-    gameStatusError = gameResult.error
-  } catch (error) {
-    gameStatusError = error instanceof Error ? error.message : "GAME_STATUS review failed."
+  if (allowsGameStatusGapFill(input.trigger)) {
+    try {
+      const gameResult = await runGameStatusGapFill(input)
+      gameStatusCommitted = gameResult.committed
+      gameStatusSummary = gameResult.summary
+      gameStatusError = gameResult.error
+    } catch (error) {
+      gameStatusError = error instanceof Error ? error.message : "GAME_STATUS review failed."
+    }
   }
 
   const summary = [loreResult.summary, gameStatusSummary].filter(Boolean).join(" ")

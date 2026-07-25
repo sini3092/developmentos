@@ -14,7 +14,8 @@ import {
   shouldRunGameStatusSyncForPush,
 } from "@/lib/agents/run-souls-game-status-sync"
 import {
-  runSoulsRepoDocsSync,
+  exportLoreDocToGithub,
+  finalizeDocsSync,
   shouldRunLoreDocSyncForPush,
 } from "@/lib/agents/run-souls-repo-docs-sync"
 import { pushTouchesOnlySoulsOutboundDocs, isSoulsOutboundDocsCommit } from "@/lib/github/souls-commits"
@@ -213,14 +214,24 @@ export async function processGithubPushEvent(
 
       if (!result.skipped) {
         try {
-          await runSoulsRepoDocsSync({
+          const loreResult = await exportLoreDocToGithub({
             projectId: project.id,
             branch: branchName,
             trigger: "after_game_status_sync",
           })
+          if (loreResult.loreDocCommitted) {
+            await finalizeDocsSync({
+              projectId: project.id,
+              loreDocCommitted: true,
+              gameStatusCommitted: false,
+              summary: loreResult.summary ?? "Lore exported after GAME_STATUS sync.",
+              trigger: "after_game_status_sync",
+              branch: branchName,
+            })
+          }
           docsSyncRanThisPush = true
         } catch (docsError) {
-          console.error("Souls repo docs sync failed:", docsError)
+          console.error("Souls lore export failed:", docsError)
         }
       }
     } catch (error) {
@@ -250,11 +261,21 @@ export async function processGithubPushEvent(
     }))
   ) {
     try {
-      await runSoulsRepoDocsSync({
+      const loreResult = await exportLoreDocToGithub({
         projectId: project.id,
         branch: branchName,
         trigger: "loredoc_push",
       })
+      if (loreResult.loreDocCommitted) {
+        await finalizeDocsSync({
+          projectId: project.id,
+          loreDocCommitted: true,
+          gameStatusCommitted: false,
+          summary: loreResult.summary ?? "Lore exported after loredoc push.",
+          trigger: "loredoc_push",
+          branch: branchName,
+        })
+      }
     } catch (error) {
       console.error("Souls lore doc sync failed:", error)
     }

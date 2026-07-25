@@ -11,6 +11,7 @@ import {
 } from "@/lib/github/game-status-touched"
 import { getGithubTokenForProjectAdmin } from "@/lib/github/project-token"
 import { pushTouchesOnlySoulsOutboundDocs } from "@/lib/github/souls-commits"
+import { gameStatusSyncAlreadyRan } from "@/lib/agents/souls-sync-guards"
 import { SOULS_GAME_STATUS_SYNC_SYSTEM_PROMPT } from "@/lib/agents/souls-game-status-sync-prompt"
 import { chatWithOpenRouter } from "@/lib/openrouter/chat"
 import { notifyProjectMembersSoulsGameStatus } from "@/lib/souls/game-status-notifications"
@@ -249,6 +250,10 @@ export async function runSoulsGameStatusSync(input: {
 
   if (!touched) {
     return { skipped: true, reason: "GAME_STATUS.md not changed in this push." }
+  }
+
+  if (await gameStatusSyncAlreadyRan(project.id, input.commitSha)) {
+    return { skipped: true, reason: "This commit was already reviewed by Souls." }
   }
 
   const token = await getGithubTokenForProjectAdmin(project.id)
